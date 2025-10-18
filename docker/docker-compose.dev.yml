@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  # MySQL for Auth, Workspace, User data
+  mysql:
+    image: mysql:8.0
+    container_name: streamline-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: streamline
+      MYSQL_USER: streamline_user
+      MYSQL_PASSWORD: streamline_pass
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      timeout: 20s
+      retries: 10
+
+  # MongoDB for Documents and Logs
+  mongodb:
+    image: mongo:7.0
+    container_name: streamline-mongodb
+    environment:
+      MONGO_INITDB_DATABASE: streamline
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/streamline --quiet
+      timeout: 20s
+      retries: 10
+
+  # Redis for Caching and Socket.io adapter
+  redis:
+    image: redis:7-alpine
+    container_name: streamline-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      timeout: 20s
+      retries: 10
+
+  # RabbitMQ for Message Queue
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: streamline-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      timeout: 20s
+      retries: 10
+
+volumes:
+  mysql_data:
+  mongodb_data:
+  redis_data:
+  rabbitmq_data:
+
+networks:
+  default:
+    name: streamline-network
