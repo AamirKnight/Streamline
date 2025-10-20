@@ -3,6 +3,7 @@ import { generateAccessToken, generateRefreshToken } from '../utils/jwt';
 import { validateRequest, registerSchema, loginSchema } from '../utils/validation';
 import { ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants';
 import User from '../models/user';
+import EmailVerification from '../models/EmailVerification';
 export const register = async (req: Request, res: Response) => {
   try {
     // Validate request
@@ -118,5 +119,37 @@ export const refreshAccessToken = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('Refresh token error:', error);
     res.status(401).json({ error: ERROR_MESSAGES.INVALID_TOKEN });
+  }
+};
+
+
+export const verifyEmail = async (req: Request, res: Response) => {
+  try {
+    const { token } = req.body;
+
+    const verification = await EmailVerification.findOne({
+      where: { token, isUsed: false },
+    });
+
+    if (!verification || verification.expiresAt < new Date()) {
+      return res.status(400).json({ error: 'Invalid or expired token' });
+    }
+
+    const user = await User.findByPk(verification.userId);
+    if (!user) {
+      return res.status(404).json({ error: ERROR_MESSAGES.USER_NOT_FOUND });
+    }
+
+    // Mark user as verified
+    user.isVerified = true;
+    await user.save();
+
+    // Mark token as used
+    verification.isUsed = true;
+    await verification.save();
+
+    res.json({ message: 'Email verified successfully' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 };

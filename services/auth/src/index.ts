@@ -4,6 +4,8 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
 import sequelize from './database';
+import User from './models/user';
+import EmailVerification from './models/EmailVerification';
 import authRoutes from './routes/authRoutes';
 import { errorHandler } from './middleware/errorHandler';
 import { config } from './config';
@@ -21,10 +23,12 @@ app.use(cors({
 app.use(express.json());
 app.use(cookieParser());
 
-// Sync database
-sequelize.sync({ alter: false }).then(() => {
-  console.log('✅ Database synchronized');
-});
+// Sync database only if not in test mode
+if (process.env.NODE_ENV !== 'test') {
+  sequelize.sync({ alter: true }).then(() => {
+    console.log('✅ Database synchronized');
+  });
+}
 
 // Routes
 app.get('/health', (req, res) => {
@@ -36,9 +40,11 @@ app.use('/auth', authRoutes);
 // Error handling
 app.use(errorHandler);
 
-// Start server
-app.listen(config.port, () => {
-  console.log(`🚀 Auth service running on port ${config.port}`);
-});
+// Start server only if not in test mode
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(config.port, () => {
+    console.log(`🚀 Auth service running on port ${config.port}`);
+  });
+}
 
 export default app;
