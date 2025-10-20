@@ -1,5 +1,7 @@
 import { DataTypes, Model, Optional } from 'sequelize';
 import sequelize from '../database';
+import bcrypt from 'bcrypt';
+import { config } from '../config';
 
 interface UserAttributes {
   id: number;
@@ -14,7 +16,8 @@ interface UserAttributes {
   updatedAt: Date;
 }
 
-interface UserCreationAttributes extends Optional<UserAttributes, 'id' | 'createdAt' | 'updatedAt'> {}
+// Add all optional fields here
+interface UserCreationAttributes extends Optional<UserAttributes, 'id' | 'createdAt' | 'updatedAt' | 'firstName' | 'lastName' | 'avatarUrl' | 'isVerified'> {}
 
 export class User extends Model<UserAttributes, UserCreationAttributes> implements UserAttributes {
   declare id: number;
@@ -27,6 +30,16 @@ export class User extends Model<UserAttributes, UserCreationAttributes> implemen
   declare isVerified: boolean;
   declare readonly createdAt: Date;
   declare readonly updatedAt: Date;
+
+  // Instance methods
+  async comparePassword(password: string): Promise<boolean> {
+    return bcrypt.compare(password, this.passwordHash);
+  }
+
+  toJSON() {
+    const { passwordHash, ...rest } = this.get();
+    return rest;
+  }
 }
 
 User.init(
@@ -40,9 +53,13 @@ User.init(
       type: DataTypes.STRING(255),
       unique: true,
       allowNull: false,
+      validate: {
+        isEmail: true,
+      },
     },
     username: {
       type: DataTypes.STRING(100),
+      allowNull: false,
     },
     passwordHash: {
       type: DataTypes.STRING(255),
@@ -74,6 +91,13 @@ User.init(
     sequelize,
     tableName: 'users',
     timestamps: true,
+    hooks: {
+      beforeCreate: async (user) => {
+        if (user.passwordHash) {
+          user.passwordHash = await bcrypt.hash(user.passwordHash, config.bcrypt.rounds);
+        }
+      },
+    },
   }
 );
 
