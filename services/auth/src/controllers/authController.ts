@@ -1,9 +1,18 @@
 import { Request, Response } from 'express';
 import { generateAccessToken, generateRefreshToken } from '../utils/jwt';
-import { validateRequest, registerSchema, loginSchema } from '../utils/validation';
 import { ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants';
 import User from '../models/user';
 import EmailVerification from '../models/EmailVerification';
+import PasswordReset, { generateResetToken } from '../models/PasswordReset';
+import bcrypt from 'bcrypt';
+import { config } from '../config';
+import { 
+  validateRequest, 
+  updateProfileSchema, 
+  requestPasswordResetSchema,
+  resetPasswordSchema ,
+   registerSchema, loginSchema
+} from '../utils/validation';
 export const register = async (req: Request, res: Response) => {
   try {
     // Validate request
@@ -149,6 +158,147 @@ export const verifyEmail = async (req: Request, res: Response) => {
     await verification.save();
 
     res.json({ message: 'Email verified successfully' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+export const getProfile = async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: ERROR_MESSAGES.UNAUTHORIZED });
+    }
+
+    const user = await User.findByPk(req.user.id, {
+      attributes: { exclude: ['passwordHash'] }
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: ERROR_MESSAGES.USER_NOT_FOUND });
+    }
+
+    res.json({ user });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const updateProfile = async (req: Request, res: Response) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ error: ERROR_MESSAGES.UNAUTHORIZED });
+    }
+
+    const validation = validateRequest(updateProfileSchema, req.body);
+    if (!validation.valid) {
+      return res.status(400).json({ errors: validation.errors });
+    }
+
+    const { firstName, lastName, username } = validation.value;
+    
+    const user = await User.findByPk(req.user.id);
+    if (!user) {
+      return res.status(404).json({ error: ERROR_MESSAGES.USER_NOT_FOUND });
+    }
+
+    // Update fields
+    if (firstName) user.firstName = firstName;
+    if (lastName) user.lastName = lastName;
+    if (username) user.username = username;
+
+    await user.save();
+
+    res.json({
+      message: 'Profile updated successfully',
+      user: user.toJSON()
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+
+
+export const requestPasswordReset = async (req: Request, res: Response) => {
+  try {
+    const validation = validateRequest(requestPasswordResetSchema, req.body);
+if (!validation.valid) {
+  return res.status(400).json({ errors: validation.errors });
+}
+    const { email } = req.body;
+
+    const user = await User.findOne({ where: { email } });
+    
+    // Always return success to prevent email enumeration
+    if (!user) {
+      return res.json({ 
+        message: 'If that email exists, a reset link has been sent' 
+      });
+    }
+
+    // Generate reset token
+    const token = generateResetToken();
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    await PasswordReset.create({
+      userId: user.id,
+      token,
+      expiresAt,
+    });
+
+    // TODO: Send email with reset link
+    // For now, just log it
+    console.log(`Password reset token for ${email}: ${token}`);
+    console.log(`Reset URL: http://localhost:3000/reset-password?token=${token}`);
+
+    res.json({ 
+      message: 'If that email exists, a reset link has been sent',
+      // Remove this in production, only for development:
+      devToken: token 
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const resetPassword = async (req: Request, res: Response) => {
+  try {
+    const validation = validateRequest(resetPasswordSchema, req.body);
+if (!validation.valid) {
+  return res.status(400).json({ errors: validation.errors });
+}
+
+    const { token, newPassword } = req.body;
+
+    // Validate password length
+    if (!newPassword || newPassword.length < 8) {
+      return res.status(400).json({ 
+        error: ERROR_MESSAGES.PASSWORD_TOO_SHORT 
+      });
+    }
+
+    const resetToken = await PasswordReset.findOne({
+      where: { token, isUsed: false },
+    });
+
+    if (!resetToken || resetToken.expiresAt < new Date()) {
+      return res.status(400).json({ error: 'Invalid or expired reset token' });
+    }
+
+    const user = await User.findByPk(resetToken.userId);
+    if (!user) {
+      return res.status(404).json({ error: ERROR_MESSAGES.USER_NOT_FOUND });
+    }
+
+    // Hash new password
+    const passwordHash = await bcrypt.hash(newPassword, config.bcrypt.rounds);
+    user.passwordHash = passwordHash;
+    await user.save();
+
+    // Mark token as used
+    resetToken.isUsed = true;
+    await resetToken.save();
+
+    res.json({ message: 'Password reset successful' });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

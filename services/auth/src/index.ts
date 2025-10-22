@@ -9,7 +9,7 @@ import EmailVerification from './models/EmailVerification';
 import authRoutes from './routes/authRoutes';
 import { errorHandler } from './middleware/errorHandler';
 import { config } from './config';
-
+import PasswordReset from './models/PasswordReset';  // ← Add this
 dotenv.config();
 
 const app = express();
