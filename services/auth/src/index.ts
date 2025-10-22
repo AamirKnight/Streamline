@@ -4,12 +4,14 @@ import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
 import sequelize from './database';
-import User from './models/user';
 import EmailVerification from './models/EmailVerification';
+import PasswordReset from './models/PasswordReset';
 import authRoutes from './routes/authRoutes';
 import { errorHandler } from './middleware/errorHandler';
 import { config } from './config';
-import PasswordReset from './models/PasswordReset';  // ← Add this
+import logger from './utils/logger';
+import { requestLogger } from './middleware/requestLogger';
+
 dotenv.config();
 
 const app = express();
@@ -22,11 +24,12 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(cookieParser());
+app.use(requestLogger);
 
 // Sync database only if not in test mode
 if (process.env.NODE_ENV !== 'test') {
   sequelize.sync({ alter: true }).then(() => {
-    console.log('✅ Database synchronized');
+    logger.info('Database synchronized');
   });
 }
 
@@ -43,8 +46,12 @@ app.use(errorHandler);
 // Start server only if not in test mode
 if (process.env.NODE_ENV !== 'test') {
   app.listen(config.port, () => {
-    console.log(`🚀 Auth service running on port ${config.port}`);
+    logger.info(`Auth service running on port ${config.port}`);
   });
 }
 
 export default app;
+
+
+
+
