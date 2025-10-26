@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>StreamLine Socket.io Test</title>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+</head>
+<body>
+  <h1>Socket.io Test Client</h1>
+  
+  <div>
+    <label>Auth Token:</label>
+    <input type="text" id="token" size="60" placeholder="Paste your JWT token here">
+    <button onclick="connect()">Connect</button>
+    <button onclick="disconnect()">Disconnect</button>
+  </div>
+
+  <div style="margin-top: 20px;">
+    <label>Document ID:</label>
+    <input type="text" id="documentId" placeholder="Enter document ID">
+    <button onclick="joinDocument()">Join Document</button>
+    <button onclick="leaveDocument()">Leave Document</button>
+  </div>
+
+  <div style="margin-top: 20px;">
+    <label>Content:</label>
+    <textarea id="content" rows="5" cols="60"></textarea>
+    <button onclick="sendChange()">Send Change</button>
+  </div>
+
+  <div style="margin-top: 20px;">
+    <h3>Events Log:</h3>
+    <div id="log" style="height: 300px; overflow-y: scroll; border: 1px solid #ccc; padding: 10px;"></div>
+  </div>
+
+  <script>
+    let socket;
+
+    function log(message) {
+      const logDiv = document.getElementById('log');
+      const time = new Date().toLocaleTimeString();
+      logDiv.innerHTML += `[${time}] ${message}<br>`;
+      logDiv.scrollTop = logDiv.scrollHeight;
+    }
+
+    function connect() {
+      const token = document.getElementById('token').value;
+      
+      if (!token) {
+        alert('Please enter auth token');
+        return;
+      }
+
+      socket = io('http://localhost:3003', {
+        auth: { token },
+        transports: ['websocket', 'polling']
+      });
+
+      socket.on('connect', () => {
+        log('✅ Connected! Socket ID: ' + socket.id);
+      });
+
+      socket.on('disconnect', (reason) => {
+        log('❌ Disconnected: ' + reason);
+      });
+
+      socket.on('document:users', (users) => {
+        log('👥 Users in document: ' + JSON.stringify(users));
+      });
+
+      socket.on('document:user-joined', (data) => {
+        log('✨ User joined: ' + data.username);
+      });
+
+      socket.on('document:user-left', (data) => {
+        log('👋 User left: ' + data.username);
+      });
+
+      socket.on('document:change', (data) => {
+        log('✏️ Document changed by ' + data.username);
+        document.getElementById('content').value = data.content;
+      });
+
+      socket.on('document:updated', (data) => {
+        log('💾 Document saved (version ' + data.version + ')');
+      });
+
+      socket.on('cursor:update', (data) => {
+        log('🖱️ Cursor update from ' + data.username + ' at position ' + data.position);
+      });
+
+      socket.on('typing:status', (data) => {
+        log('⌨️ ' + data.username + ' is ' + (data.isTyping ? 'typing' : 'not typing'));
+      });
+
+      socket.on('error', (error) => {
+        log('⚠️ Error: ' + error.message);
+      });
+    }
+
+    function disconnect() {
+      if (socket) {
+        socket.disconnect();
+        log('Disconnected manually');
+      }
+    }
+
+    function joinDocument() {
+      const documentId = document.getElementById('documentId').value;
+      if (!documentId) {
+        alert('Please enter document ID');
+        return;
+      }
+      socket.emit('document:join', { documentId });
+      log('📄 Joining document: ' + documentId);
+    }
+
+    function leaveDocument() {
+      const documentId = document.getElementById('documentId').value;
+      socket.emit('document:leave', { documentId });
+      log('📄 Leaving document: ' + documentId);
+    }
+
+    function sendChange() {
+      const documentId = document.getElementById('documentId').value;
+      const content = document.getElementById('content').value;
+      
+      socket.emit('document:change', {
+        documentId,
+        content,
+        version: 1
+      });
+      
+      log('📝 Sent content change');
+    }
+  </script>
+</body>
+</html>

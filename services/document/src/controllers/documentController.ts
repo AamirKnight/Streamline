@@ -3,6 +3,7 @@ import Document from '../models/Document';
 import DocumentVersion from '../models/DocumentVersion';
 import { ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants';
 import logger from '../utils/logger';
+import { Server } from 'socket.io';
 
 export const createDocument = async (req: Request, res: Response) => {
   try {
@@ -98,6 +99,10 @@ export const getDocumentById = async (req: Request, res: Response) => {
   }
 };
 
+
+
+// ... existing imports
+
 export const updateDocument = async (req: Request, res: Response) => {
   try {
     const { documentId } = req.params;
@@ -129,6 +134,19 @@ export const updateDocument = async (req: Request, res: Response) => {
     await document.save();
 
     logger.info('Document updated', { documentId, userId });
+
+    // Broadcast update via Socket.io
+    const io: Server = req.app.get('io');
+    if (io) {
+      io.to(`document:${documentId}`).emit('document:updated', {
+        documentId,
+        title: document.title,
+        content: document.content,
+        version: document.version,
+        updatedBy: userId,
+        timestamp: Date.now(),
+      });
+    }
 
     res.json({
       message: SUCCESS_MESSAGES.DOCUMENT_UPDATED,
