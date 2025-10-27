@@ -7,11 +7,13 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { workspaceService, type Workspace } from '@/lib/workspace';
+import { documentService } from '@/lib/document';
 import { toast } from 'sonner';
 import { Plus, Users, FileText } from 'lucide-react';
 
 export default function WorkspacesPage() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [documentCounts, setDocumentCounts] = useState<Record<number, number>>({});
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
@@ -23,6 +25,16 @@ export default function WorkspacesPage() {
     try {
       const data = await workspaceService.getWorkspaces();
       setWorkspaces(data);
+      
+      // Fetch document counts for each workspace
+      const counts: Record<number, number> = {};
+      await Promise.all(
+        data.map(async (workspace) => {
+          const docs = await documentService.getDocuments(workspace.id);
+          counts[workspace.id] = docs.length;
+        })
+      );
+      setDocumentCounts(counts);
     } catch (error: any) {
       toast.error('Failed to load workspaces');
     } finally {
@@ -78,31 +90,31 @@ export default function WorkspacesPage() {
             </Card>
           ) : (
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {workspaces.map((workspace) => (
-                <Card
-                  key={workspace.id}
-                  className="hover:shadow-lg transition-shadow cursor-pointer"
-                  onClick={() => router.push(`/workspaces/${workspace.id}`)}
-                >
-                  <CardHeader>
-                    <CardTitle>{workspace.name}</CardTitle>
-                    <CardDescription>
-                      {workspace.description || 'No description'}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex items-center justify-between text-sm text-gray-600">
-                      <div className="flex items-center gap-1">
-                        <FileText className="w-4 h-4" />
-                        <span>0 documents</span>
-                      </div>
-                      <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">
-                        {workspace.role}
-                      </span>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+           {workspaces.map((workspace) => (
+    <Card
+      key={workspace.id}
+      className="hover:shadow-lg transition-shadow cursor-pointer"
+      onClick={() => router.push(`/workspaces/${workspace.id}`)}
+    >
+      <CardHeader>
+        <CardTitle>{workspace.name}</CardTitle>
+        <CardDescription>
+          {workspace.description || 'No description'}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-center justify-between text-sm text-gray-600">
+          <div className="flex items-center gap-1">
+            <FileText className="w-4 h-4" />
+            <span>{documentCounts[workspace.id] || 0} documents</span>
+          </div>
+          <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">
+            {workspace.role}
+          </span>
+        </div>
+      </CardContent>
+    </Card>
+  ))}
             </div>
           )}
         </div>
