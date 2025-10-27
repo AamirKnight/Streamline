@@ -2,10 +2,15 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
+import { useEditor, EditorContent } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
+import Placeholder from '@tiptap/extension-placeholder';
+import History from '@tiptap/extension-history';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { EditorToolbar } from '@/components/editor/EditorToolbar';
 import { documentService, type Document } from '@/lib/document';
 import { useSocket } from '@/hooks/useSocket';
 import { toast } from 'sonner';
@@ -18,13 +23,45 @@ export default function DocumentEditorPage() {
 
   const [document, setDocument] = useState<Document | null>(null);
   const [title, setTitle] = useState('');
-  const [content, setContent] = useState('');
   const [saving, setSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
-  const contentRef = useRef<HTMLTextAreaElement>(null);
+
+  // ✅ Fix: provide initial value as null to useRef
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Socket.io connection
   const { connected, users, emitChange, onDocumentChange } = useSocket(documentId);
+
+  // ✅ TipTap Editor (Tiptap v3 setup)
+  const editor = useEditor({
+    extensions: [
+      StarterKit, // No history config here
+      History.configure({
+        depth: 100,
+      }),
+      Placeholder.configure({
+        placeholder: 'Start writing...',
+      }),
+    ],
+    content: '',
+    editable: true,
+    onUpdate: ({ editor }) => {
+      const html = editor.getHTML();
+
+      // Broadcast change to other users
+      if (document) {
+        emitChange(html, document.version);
+      }
+
+      // Auto-save after 2 seconds of inactivity
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+      saveTimeoutRef.current = setTimeout(() => {
+        handleAutoSave(html);
+      }, 2000);
+    },
+  });
 
   useEffect(() => {
     loadDocument();
@@ -34,27 +71,46 @@ export default function DocumentEditorPage() {
     // Listen for changes from other users
     onDocumentChange((data: any) => {
       console.log('Received change from:', data.username);
-      setContent(data.content);
-      setDocument(prev => prev ? { ...prev, content: data.content } : null);
+      if (editor && !editor.isFocused) {
+        editor.commands.setContent(data.content);
+      }
     });
-  }, []);
+  }, [editor]);
 
   const loadDocument = async () => {
     try {
       const doc = await documentService.getDocument(documentId);
       setDocument(doc);
       setTitle(doc.title);
-      setContent(doc.content);
+      if (editor) {
+        editor.commands.setContent(doc.content);
+      }
     } catch (error: any) {
       toast.error('Failed to load document');
     }
   };
 
-  const handleSave = async () => {
+  const handleAutoSave = async (content: string) => {
     if (!document) return;
+
+    try {
+      await documentService.updateDocument(documentId, {
+        title,
+        content,
+      });
+      setLastSaved(new Date());
+      console.log('Auto-saved');
+    } catch (error: any) {
+      console.error('Auto-save failed:', error);
+    }
+  };
+
+  const handleManualSave = async () => {
+    if (!document || !editor) return;
 
     setSaving(true);
     try {
+      const content = editor.getHTML();
       await documentService.updateDocument(documentId, {
         title,
         content,
@@ -68,17 +124,7 @@ export default function DocumentEditorPage() {
     }
   };
 
-  const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const newContent = e.target.value;
-    setContent(newContent);
-
-    // Broadcast change to other users
-    if (document) {
-      emitChange(newContent, document.version);
-    }
-  };
-
-  if (!document) {
+  if (!document || !editor) {
     return (
       <ProtectedRoute>
         <DashboardLayout>
@@ -93,9 +139,9 @@ export default function DocumentEditorPage() {
   return (
     <ProtectedRoute>
       <DashboardLayout>
-        <div className="space-y-4">
+        <div className="space-y-0">
           {/* Editor Header */}
-          <div className="flex items-center justify-between border-b pb-4">
+          <div className="flex items-center justify-between border-b pb-4 mb-4">
             <div className="flex items-center gap-4 flex-1">
               <Button
                 variant="ghost"
@@ -124,7 +170,7 @@ export default function DocumentEditorPage() {
               <div className="flex items-center gap-2">
                 <Users className="w-4 h-4 text-gray-600" />
                 <span className="text-sm text-gray-600">
-                  {users.length} {users.length === 1 ? 'user' : 'users'}
+                  {users.length} online
                 </span>
                 {connected ? (
                   <span className="w-2 h-2 bg-green-500 rounded-full"></span>
@@ -133,7 +179,7 @@ export default function DocumentEditorPage() {
                 )}
               </div>
 
-              <Button onClick={handleSave} disabled={saving}>
+              <Button onClick={handleManualSave} disabled={saving}>
                 <Save className="w-4 h-4 mr-2" />
                 {saving ? 'Saving...' : 'Save'}
               </Button>
@@ -142,12 +188,12 @@ export default function DocumentEditorPage() {
 
           {/* Active Users List */}
           {users.length > 0 && (
-            <div className="bg-blue-50 border border-blue-200 rounded p-3">
+            <div className="bg-blue-50 border border-blue-200 rounded p-3 mb-4">
               <p className="text-sm font-medium text-blue-900 mb-2">
                 Currently editing:
               </p>
               <div className="flex flex-wrap gap-2">
-                {users.map((user, index) => (
+                {users.map((user) => (
                   <span
                     key={user.socketId}
                     className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs"
@@ -159,21 +205,18 @@ export default function DocumentEditorPage() {
             </div>
           )}
 
-          {/* Editor Area */}
-          <div className="border rounded-lg p-4 bg-white shadow-sm">
-            <textarea
-              ref={contentRef}
-              value={content}
-              onChange={handleContentChange}
-              className="w-full h-[calc(100vh-300px)] resize-none focus:outline-none text-base leading-relaxed"
-              placeholder="Start writing..."
-            />
+          {/* Editor */}
+          <div className="border rounded-lg bg-white shadow-sm overflow-hidden">
+            <EditorToolbar editor={editor} />
+            <div className="tiptap-editor">
+              <EditorContent editor={editor} />
+            </div>
           </div>
 
           {/* Status Bar */}
-          <div className="flex items-center justify-between text-sm text-gray-600 border-t pt-4">
+          <div className="flex items-center justify-between text-sm text-gray-600 border-t pt-4 mt-4">
             <div>
-              Version {document.version} • {content.length} characters
+              Version {document.version} • {editor.storage.characterCount?.characters() || 0} characters
             </div>
             <div>
               Last edited {new Date(document.updatedAt).toLocaleString()}
