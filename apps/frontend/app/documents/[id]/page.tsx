@@ -15,6 +15,16 @@ import { documentService, type Document } from '@/lib/document';
 import { useSocket } from '@/hooks/useSocket';
 import { toast } from 'sonner';
 import { Save, ArrowLeft, Users } from 'lucide-react';
+import Collaboration from '@tiptap/extension-collaboration';
+import CollaborationCursor from '@tiptap/extension-collaboration-cursor';
+import * as Y from 'yjs';
+import { useAuth } from '@/contexts/AuthContext';
+import { PresenceAvatars } from '@/components/editor/PresenceAvatars';
+
+// Add before component
+const colors = ['#958DF1', '#F98181', '#FBBC88', '#FAF594', '#70CFF8', '#94FADB', '#B9F18D'];
+
+const getRandomColor = () => colors[Math.floor(Math.random() * colors.length)];
 
 export default function DocumentEditorPage() {
   const params = useParams();
@@ -31,37 +41,50 @@ export default function DocumentEditorPage() {
 
   // Socket.io connection
   const { connected, users, emitChange, onDocumentChange } = useSocket(documentId);
+const [ydoc] = useState(() => new Y.Doc());
+  const { user } = useAuth(); // Import useAuth hook
 
   // ✅ TipTap Editor (Tiptap v3 setup)
-  const editor = useEditor({
-    extensions: [
-      StarterKit, // No history config here
-      History.configure({
-        depth: 100,
-      }),
-      Placeholder.configure({
-        placeholder: 'Start writing...',
-      }),
-    ],
-    content: '',
-    editable: true,
-    onUpdate: ({ editor }) => {
-      const html = editor.getHTML();
+ const editor = useEditor({
+  extensions: [
+    StarterKit, // no history config inside
+    History.configure({
+      depth: 100,
+    }),
+    Placeholder.configure({
+      placeholder: 'Start writing...',
+    }),
+    Collaboration.configure({
+      document: ydoc,
+    }),
+    CollaborationCursor.configure({
+      provider: null, // handled manually if using provider like y-webrtc/y-websocket
+      user: {
+        name: user?.username || 'Anonymous',
+        color: getRandomColor(),
+      },
+    }),
+  ],
+  content: '',
+  editable: true,
+  onUpdate: ({ editor }) => {
+    const html = editor.getHTML();
 
-      // Broadcast change to other users
-      if (document) {
-        emitChange(html, document.version);
-      }
+    // Broadcast changes (if needed for your backend sync)
+    if (document) {
+      emitChange(html, document.version);
+    }
 
-      // Auto-save after 2 seconds of inactivity
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-      saveTimeoutRef.current = setTimeout(() => {
-        handleAutoSave(html);
-      }, 2000);
-    },
-  });
+    // Auto-save after 2 seconds of inactivity
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+
+    saveTimeoutRef.current = setTimeout(() => {
+      handleAutoSave(html);
+    }, 2000);
+  },
+});
 
   useEffect(() => {
     loadDocument();
@@ -179,10 +202,13 @@ export default function DocumentEditorPage() {
                 )}
               </div>
 
-              <Button onClick={handleManualSave} disabled={saving}>
-                <Save className="w-4 h-4 mr-2" />
-                {saving ? 'Saving...' : 'Save'}
-              </Button>
+             <div className="flex items-center gap-4">
+  <PresenceAvatars users={users} />
+  <Button onClick={handleManualSave} disabled={saving}>
+    <Save className="w-4 h-4 mr-2" />
+    Save
+  </Button>
+</div>
             </div>
           </div>
 
