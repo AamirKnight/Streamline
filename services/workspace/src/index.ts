@@ -8,12 +8,15 @@ import WorkspaceMember from './models/WorkspaceMember';
 import WorkspaceInvitation from './models/WorkspaceInvitation';
 import workspaceRoutes from './routes/workspaceRoutes';
 import logger from './utils/logger';
+import { connectCache } from './utils/cache';
+
+// After other connections
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3002;
-
+connectCache();
 // Middleware
 app.use(helmet());
 app.use(cors({

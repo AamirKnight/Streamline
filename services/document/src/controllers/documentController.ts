@@ -4,6 +4,7 @@ import DocumentVersion from '../models/DocumentVersion';
 import { ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants';
 import logger from '../utils/logger';
 import { Server } from 'socket.io';
+import { cache } from '../utils/cahce';
 
 export const createDocument = async (req: Request, res: Response) => {
   try {
@@ -79,84 +80,10 @@ export const getDocuments = async (req: Request, res: Response) => {
   }
 };
 
-export const getDocumentById = async (req: Request, res: Response) => {
-  try {
-    const { documentId } = req.params;
-
-    const document = await Document.findById(documentId);
-
-    if (!document) {
-      return res.status(404).json({ error: ERROR_MESSAGES.DOCUMENT_NOT_FOUND });
-    }
-
-    res.json({ document });
-  } catch (error: any) {
-    if (error.name === 'CastError') {
-      return res.status(400).json({ error: ERROR_MESSAGES.INVALID_DOCUMENT_ID });
-    }
-    logger.error('Get document error:', error);
-    res.status(500).json({ error: error.message });
-  }
-};
 
 
 
 // ... existing imports
-
-export const updateDocument = async (req: Request, res: Response) => {
-  try {
-    const { documentId } = req.params;
-    const { title, content } = req.body;
-    const userId = req.user?.id;
-
-    const document = await Document.findById(documentId);
-
-    if (!document) {
-      return res.status(404).json({ error: ERROR_MESSAGES.DOCUMENT_NOT_FOUND });
-    }
-
-    // Update document
-    if (title) document.title = title;
-    if (content !== undefined) {
-      document.content = content;
-      document.version += 1;
-      
-      // Save version history
-      await DocumentVersion.create({
-        documentId: document._id.toString(),
-        content,
-        versionNumber: document.version,
-        createdBy: userId!,
-      });
-    }
-    
-    document.lastEditedBy = userId;
-    await document.save();
-
-    logger.info('Document updated', { documentId, userId });
-
-    // Broadcast update via Socket.io
-    const io: Server = req.app.get('io');
-    if (io) {
-      io.to(`document:${documentId}`).emit('document:updated', {
-        documentId,
-        title: document.title,
-        content: document.content,
-        version: document.version,
-        updatedBy: userId,
-        timestamp: Date.now(),
-      });
-    }
-
-    res.json({
-      message: SUCCESS_MESSAGES.DOCUMENT_UPDATED,
-      document,
-    });
-  } catch (error: any) {
-    logger.error('Update document error:', error);
-    res.status(500).json({ error: error.message });
-  }
-};
 
 export const deleteDocument = async (req: Request, res: Response) => {
   try {
@@ -225,6 +152,97 @@ export const searchDocuments = async (req: Request, res: Response) => {
     res.json({ documents });
   } catch (error: any) {
     logger.error('Search documents error:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const getDocumentById = async (req: Request, res: Response) => {
+  try {
+    const { documentId } = req.params;
+    
+    // Try cache first
+    const cacheKey = `document:${documentId}`;
+    const cachedDoc = await cache.get(cacheKey);
+    
+    if (cachedDoc) {
+      return res.json({ document: cachedDoc });
+    }
+
+    // Cache miss - get from database
+    const document = await Document.findById(documentId);
+
+    if (!document) {
+      return res.status(404).json({ error: ERROR_MESSAGES.DOCUMENT_NOT_FOUND });
+    }
+
+    // Store in cache
+    await cache.set(cacheKey, document, 3600); // 1 hour
+
+    res.json({ document });
+  } catch (error: any) {
+    if (error.name === 'CastError') {
+      return res.status(400).json({ error: ERROR_MESSAGES.INVALID_DOCUMENT_ID });
+    }
+    logger.error('Get document error:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const updateDocument = async (req: Request, res: Response) => {
+  try {
+    const { documentId } = req.params;
+    const { title, content } = req.body;
+    const userId = req.user?.id;
+
+    const document = await Document.findById(documentId);
+
+    if (!document) {
+      return res.status(404).json({ error: ERROR_MESSAGES.DOCUMENT_NOT_FOUND });
+    }
+
+    // Update document
+    if (title) document.title = title;
+    if (content !== undefined) {
+      document.content = content;
+      document.version += 1;
+      
+      // Save version history
+      await DocumentVersion.create({
+        documentId: document._id.toString(),
+        content,
+        versionNumber: document.version,
+        createdBy: userId!,
+      });
+    }
+    
+    document.lastEditedBy = userId;
+    await document.save();
+
+    // Invalidate cache
+    await cache.del(`document:${documentId}`);
+    await cache.delPattern(`documents:workspace:${document.workspaceId}*`);
+
+    logger.info('Document updated', { documentId, userId });
+
+    // Broadcast update via Socket.io
+    const io: Server = req.app.get('io');
+    if (io) {
+      io.to(`document:${documentId}`).emit('document:updated', {
+        documentId,
+        title: document.title,
+        content: document.content,
+        version: document.version,
+        updatedBy: userId,
+        timestamp: Date.now(),
+      });
+    }
+
+    res.json({
+      message: SUCCESS_MESSAGES.DOCUMENT_UPDATED,
+      document,
+    });
+  } catch (error: any) {
+    logger.error('Update document error:', error);
     res.status(500).json({ error: error.message });
   }
 };

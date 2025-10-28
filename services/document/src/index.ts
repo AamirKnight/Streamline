@@ -9,6 +9,7 @@ import documentRoutes from './routes/documentRoutes';
 import { setupSocketIO } from './socket';
 import logger from './utils/logger';
 import { config } from './config';
+import cacheRoutes from './routes/cacheRoutes';
 
 dotenv.config();
 
@@ -38,6 +39,8 @@ app.get('/health', (req, res) => {
   res.json({ status: 'OK', service: 'document', socketio: 'enabled' });
 });
 
+// Add route
+app.use('/cache', cacheRoutes);
 app.use('/documents', documentRoutes);
 
 // Error handling

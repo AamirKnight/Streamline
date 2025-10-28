@@ -2,6 +2,160 @@ import { Request, Response } from 'express';
 import Workspace from '../models/Workspace';
 import WorkspaceMember, { MemberRole } from '../models/WorkspaceMember';
 import WorkspaceInvitation, { generateInvitationToken } from '../models/WorkspaceInvitation';
+import { cache } from '../utils/cache';
+
+export const getWorkspaces = async (req: Request, res: Response) => {
+  try {
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    // Try cache first
+    const cacheKey = `workspaces:user:${userId}`;
+    const cachedWorkspaces = await cache.get<any[]>(cacheKey);
+
+    if (cachedWorkspaces) {
+      return res.json({ workspaces: cachedWorkspaces });
+    }
+
+    // Cache miss - get from database
+    const memberships = await WorkspaceMember.findAll({
+      where: { userId },
+    });
+
+    const workspaceIds = memberships.map(m => m.workspaceId);
+    const workspaces = await Workspace.findAll({
+      where: { id: workspaceIds },
+    });
+
+    const workspacesWithRoles = workspaces.map(workspace => {
+      const membership = memberships.find(m => m.workspaceId === workspace.id);
+      return {
+        ...workspace.toJSON(),
+        role: membership?.role,
+      };
+    });
+
+    // Store in cache for 5 minutes
+    await cache.set(cacheKey, workspacesWithRoles, 300);
+
+    res.json({ workspaces: workspacesWithRoles });
+  } catch (error: any) {
+    console.error('Get workspaces error:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const getWorkspaceById = async (req: Request, res: Response) => {
+  try {
+    const workspaceId = parseInt(req.params.workspaceId);
+    const userId = req.user?.id;
+
+    // Try cache first
+    const cacheKey = `workspace:${workspaceId}`;
+    const cachedWorkspace = await cache.get(cacheKey);
+
+    if (cachedWorkspace) {
+      return res.json({ workspace: cachedWorkspace });
+    }
+
+    // Cache miss - get from database
+    const workspace = await Workspace.findByPk(workspaceId);
+
+    if (!workspace) {
+      return res.status(404).json({ error: 'Workspace not found' });
+    }
+
+    const membership = await WorkspaceMember.findOne({
+      where: { workspaceId, userId },
+    });
+
+    const workspaceData = {
+      ...workspace.toJSON(),
+      role: membership?.role,
+    };
+
+    // Store in cache for 10 minutes
+    await cache.set(cacheKey, workspaceData, 600);
+
+    res.json({ workspace: workspaceData });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const updateWorkspace = async (req: Request, res: Response) => {
+  try {
+    const workspaceId = parseInt(req.params.workspaceId);
+    const { name, description } = req.body;
+    const userId = req.user?.id;
+
+    const workspace = await Workspace.findByPk(workspaceId);
+
+    if (!workspace) {
+      return res.status(404).json({ error: 'Workspace not found' });
+    }
+
+    if (name) workspace.name = name;
+    if (description !== undefined) workspace.description = description;
+
+    await workspace.save();
+
+    // Invalidate caches
+    await cache.del(`workspace:${workspaceId}`);
+    
+    // Invalidate all user workspace lists that include this workspace
+    const members = await WorkspaceMember.findAll({ where: { workspaceId } });
+    for (const member of members) {
+      await cache.del(`workspaces:user:${member.userId}`);
+    }
+
+    res.json({
+      message: 'Workspace updated successfully',
+      workspace,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const deleteWorkspace = async (req: Request, res: Response) => {
+  try {
+    const workspaceId = parseInt(req.params.workspaceId);
+
+    const workspace = await Workspace.findByPk(workspaceId);
+
+    if (!workspace) {
+      return res.status(404).json({ error: 'Workspace not found' });
+    }
+
+    // Get all members before deletion for cache invalidation
+    const members = await WorkspaceMember.findAll({ where: { workspaceId } });
+
+    // Delete all members
+    await WorkspaceMember.destroy({ where: { workspaceId } });
+
+    // Delete all invitations
+    await WorkspaceInvitation.destroy({ where: { workspaceId } });
+
+    // Delete workspace
+    await workspace.destroy();
+
+    // Invalidate caches
+    await cache.del(`workspace:${workspaceId}`);
+    for (const member of members) {
+      await cache.del(`workspaces:user:${member.userId}`);
+    }
+
+    res.json({ message: 'Workspace deleted successfully' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+
 
 export const createWorkspace = async (req: Request, res: Response) => {
   try {
@@ -41,123 +195,7 @@ export const createWorkspace = async (req: Request, res: Response) => {
   }
 };
 
-export const getWorkspaces = async (req: Request, res: Response) => {
-  try {
-    const userId = req.user?.id;
 
-    if (!userId) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    // Get all workspaces where user is a member
-    const memberships = await WorkspaceMember.findAll({
-      where: { userId },
-      include: [
-        {
-          model: Workspace,
-          as: 'workspace',
-        },
-      ],
-    });
-
-    // Get workspace details
-    const workspaceIds = memberships.map(m => m.workspaceId);
-    const workspaces = await Workspace.findAll({
-      where: { id: workspaceIds },
-    });
-
-    // Attach role to each workspace
-    const workspacesWithRoles = workspaces.map(workspace => {
-      const membership = memberships.find(m => m.workspaceId === workspace.id);
-      return {
-        ...workspace.toJSON(),
-        role: membership?.role,
-      };
-    });
-
-    res.json({ workspaces: workspacesWithRoles });
-  } catch (error: any) {
-    console.error('Get workspaces error:', error);
-    res.status(500).json({ error: error.message });
-  }
-};
-
-export const getWorkspaceById = async (req: Request, res: Response) => {
-  try {
-    const workspaceId = parseInt(req.params.workspaceId);
-    const userId = req.user?.id;
-
-    const workspace = await Workspace.findByPk(workspaceId);
-
-    if (!workspace) {
-      return res.status(404).json({ error: 'Workspace not found' });
-    }
-
-    // Get user's role in workspace
-    const membership = await WorkspaceMember.findOne({
-      where: { workspaceId, userId },
-    });
-
-    res.json({
-      workspace: {
-        ...workspace.toJSON(),
-        role: membership?.role,
-      },
-    });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-};
-
-export const updateWorkspace = async (req: Request, res: Response) => {
-  try {
-    const workspaceId = parseInt(req.params.workspaceId);
-    const { name, description } = req.body;
-
-    const workspace = await Workspace.findByPk(workspaceId);
-
-    if (!workspace) {
-      return res.status(404).json({ error: 'Workspace not found' });
-    }
-
-    if (name) workspace.name = name;
-    if (description !== undefined) workspace.description = description;
-
-    await workspace.save();
-
-    res.json({
-      message: 'Workspace updated successfully',
-      workspace,
-    });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-};
-
-export const deleteWorkspace = async (req: Request, res: Response) => {
-  try {
-    const workspaceId = parseInt(req.params.workspaceId);
-
-    const workspace = await Workspace.findByPk(workspaceId);
-
-    if (!workspace) {
-      return res.status(404).json({ error: 'Workspace not found' });
-    }
-
-    // Delete all members
-    await WorkspaceMember.destroy({ where: { workspaceId } });
-
-    // Delete all invitations
-    await WorkspaceInvitation.destroy({ where: { workspaceId } });
-
-    // Delete workspace
-    await workspace.destroy();
-
-    res.json({ message: 'Workspace deleted successfully' });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-};
 
 export const getWorkspaceMembers = async (req: Request, res: Response) => {
   try {
