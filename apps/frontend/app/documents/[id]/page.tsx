@@ -5,7 +5,7 @@ import { useRouter, useParams } from 'next/navigation';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
-import History from '@tiptap/extension-history';
+
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
@@ -15,8 +15,7 @@ import { documentService, type Document } from '@/lib/document';
 import { useSocket } from '@/hooks/useSocket';
 import { toast } from 'sonner';
 import { Save, ArrowLeft, Users } from 'lucide-react';
-import Collaboration from '@tiptap/extension-collaboration';
-import CollaborationCursor from '@tiptap/extension-collaboration-cursor';
+
 import * as Y from 'yjs';
 import { useAuth } from '@/contexts/AuthContext';
 import { PresenceAvatars } from '@/components/editor/PresenceAvatars';
@@ -41,28 +40,15 @@ export default function DocumentEditorPage() {
 
   // Socket.io connection
   const { connected, users, emitChange, onDocumentChange } = useSocket(documentId);
-const [ydoc] = useState(() => new Y.Doc());
-  const { user } = useAuth(); // Import useAuth hook
 
   // ✅ TipTap Editor (Tiptap v3 setup)
- const editor = useEditor({
+const editor = useEditor({
+  immediatelyRender: false,
   extensions: [
-    StarterKit, // no history config inside
-    History.configure({
-      depth: 100,
-    }),
+    StarterKit.configure({
+    }), // ← Configure history inside StarterKit
     Placeholder.configure({
       placeholder: 'Start writing...',
-    }),
-    Collaboration.configure({
-      document: ydoc,
-    }),
-    CollaborationCursor.configure({
-      provider: null, // handled manually if using provider like y-webrtc/y-websocket
-      user: {
-        name: user?.username || 'Anonymous',
-        color: getRandomColor(),
-      },
     }),
   ],
   content: '',
@@ -70,12 +56,10 @@ const [ydoc] = useState(() => new Y.Doc());
   onUpdate: ({ editor }) => {
     const html = editor.getHTML();
 
-    // Broadcast changes (if needed for your backend sync)
     if (document) {
       emitChange(html, document.version);
     }
 
-    // Auto-save after 2 seconds of inactivity
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
     }
@@ -85,7 +69,26 @@ const [ydoc] = useState(() => new Y.Doc());
     }, 2000);
   },
 });
-
+const loadDocument = async () => {
+  try {
+    const doc = await documentService.getDocument(documentId);
+    console.log('📄 Document loaded:', doc); // ← Add this
+    console.log('📝 Content:', doc.content); // ← Add this
+    
+    setDocument(doc);
+    setTitle(doc.title);
+    
+    if (editor) {
+      console.log('✅ Setting content in editor'); // ← Add this
+      editor.commands.setContent(doc.content);
+    } else {
+      console.log('❌ Editor not ready yet'); // ← Add this
+    }
+  } catch (error: any) {
+    console.error('❌ Load error:', error); // ← Add this
+    toast.error('Failed to load document');
+  }
+};
   useEffect(() => {
     loadDocument();
   }, [documentId]);
@@ -100,18 +103,18 @@ const [ydoc] = useState(() => new Y.Doc());
     });
   }, [editor]);
 
-  const loadDocument = async () => {
-    try {
-      const doc = await documentService.getDocument(documentId);
-      setDocument(doc);
-      setTitle(doc.title);
-      if (editor) {
-        editor.commands.setContent(doc.content);
-      }
-    } catch (error: any) {
-      toast.error('Failed to load document');
-    }
-  };
+  // const loadDocument = async () => {
+  //   try {
+  //     const doc = await documentService.getDocument(documentId);
+  //     setDocument(doc);
+  //     setTitle(doc.title);
+  //     if (editor) {
+  //       editor.commands.setContent(doc.content);
+  //     }
+  //   } catch (error: any) {
+  //     toast.error('Failed to load document');
+  //   }
+  // };
 
   const handleAutoSave = async (content: string) => {
     if (!document) return;
