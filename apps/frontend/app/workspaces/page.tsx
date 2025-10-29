@@ -10,6 +10,7 @@ import { workspaceService, type Workspace } from '@/lib/workspace';
 import { documentService } from '@/lib/document';
 import { toast } from 'sonner';
 import { Plus, Users, FileText } from 'lucide-react';
+ import { DocumentListSkeleton,Skeleton } from '@/components/ui/skeleton';
 
 export default function WorkspacesPage() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -42,17 +43,23 @@ export default function WorkspacesPage() {
     }
   };
 
-  if (loading) {
-    return (
-      <ProtectedRoute>
-        <DashboardLayout>
-          <div className="flex items-center justify-center h-64">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+
+// In component:
+if (loading) {
+  return (
+    <ProtectedRoute>
+      <DashboardLayout>
+        <div className="space-y-6">
+          <div>
+            <Skeleton className="h-8 w-64 mb-2" />
+            <Skeleton className="h-4 w-96" />
           </div>
-        </DashboardLayout>
-      </ProtectedRoute>
-    );
-  }
+          <DocumentListSkeleton />
+        </div>
+      </DashboardLayout>
+    </ProtectedRoute>
+  );
+}
 
   return (
     <ProtectedRoute>

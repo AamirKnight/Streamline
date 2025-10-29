@@ -5,11 +5,13 @@ import { useRouter, useParams } from 'next/navigation';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { workspaceService, type Workspace } from '@/lib/workspace';
 import { documentService, type Document } from '@/lib/document';
+import { useDebounce } from '@/hooks/useDebounce';
 import { toast } from 'sonner';
-import { Plus, FileText, Clock, ArrowLeft } from 'lucide-react';
+import { Plus, FileText, Clock, ArrowLeft, Search } from 'lucide-react';
 
 export default function WorkspaceDetailPage() {
   const params = useParams();
@@ -19,6 +21,9 @@ export default function WorkspaceDetailPage() {
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  
+  const debouncedSearch = useDebounce(searchQuery, 300);
 
   useEffect(() => {
     loadWorkspaceData();
@@ -42,6 +47,12 @@ export default function WorkspaceDetailPage() {
   const handleCreateDocument = () => {
     router.push(`/workspaces/${workspaceId}/documents/new`);
   };
+
+  // Filter documents based on search query
+  const filteredDocuments = documents.filter(doc =>
+    doc.title.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+    doc.content.toLowerCase().includes(debouncedSearch.toLowerCase())
+  );
 
   if (loading) {
     return (
@@ -101,7 +112,21 @@ export default function WorkspaceDetailPage() {
 
           {/* Documents List */}
           <div>
-            <h2 className="text-xl font-semibold mb-4">Documents</h2>
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-semibold text-gray-900">Documents</h2>
+              {documents.length > 0 && (
+                <div className="relative w-80">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <Input
+                    type="text"
+                    placeholder="Search by title or content..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-10 h-10"
+                  />
+                </div>
+              )}
+            </div>
             
             {documents.length === 0 ? (
               <Card>
@@ -118,9 +143,21 @@ export default function WorkspaceDetailPage() {
                   </Button>
                 </CardContent>
               </Card>
+            ) : filteredDocuments.length === 0 ? (
+              <Card>
+                <CardContent className="flex flex-col items-center justify-center py-16">
+                  <Search className="w-12 h-12 text-gray-400 mb-4" />
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">
+                    No documents found
+                  </h3>
+                  <p className="text-gray-600">
+                    Try adjusting your search query
+                  </p>
+                </CardContent>
+              </Card>
             ) : (
               <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {documents.map((doc) => (
+                {filteredDocuments.map((doc) => (
                   <Card
                     key={doc._id}
                     className="hover:shadow-lg transition-shadow cursor-pointer"

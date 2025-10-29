@@ -46,11 +46,16 @@ const documentSchema = new Schema<IDocument>(
 );
 
 // Indexes for faster queries
+// Add compound indexes for better query performance
 documentSchema.index({ workspaceId: 1, createdAt: -1 });
-documentSchema.index({ title: 'text', content: 'text' }); // Text search
+documentSchema.index({ workspaceId: 1, updatedAt: -1 });
+documentSchema.index({ createdBy: 1, createdAt: -1 });
+documentSchema.index({ title: 'text', content: 'text' }); // Already exists
+
+// Ensure indexes are created
 
 documentSchema.set('autoIndex', true);
 
 const Document = mongoose.model<IDocument>('Document', documentSchema);
-
+Document.createIndexes();
 export default Document;

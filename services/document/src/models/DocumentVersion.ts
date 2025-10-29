@@ -33,12 +33,14 @@ const documentVersionSchema = new Schema<IDocumentVersion>(
   }
 );
 
-// Index for efficient version queries
 documentVersionSchema.index({ documentId: 1, versionNumber: -1 });
+documentVersionSchema.index({ documentId: 1, createdAt: -1 });
 
 const DocumentVersion = mongoose.model<IDocumentVersion>(
   'DocumentVersion',
   documentVersionSchema
 );
+// Add indexes
 
+DocumentVersion.createIndexes();
 export default DocumentVersion;

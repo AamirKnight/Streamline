@@ -5,7 +5,6 @@ import { useRouter, useParams } from 'next/navigation';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
-
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
@@ -15,15 +14,9 @@ import { documentService, type Document } from '@/lib/document';
 import { useSocket } from '@/hooks/useSocket';
 import { toast } from 'sonner';
 import { Save, ArrowLeft, Users } from 'lucide-react';
-
-import * as Y from 'yjs';
 import { useAuth } from '@/contexts/AuthContext';
 import { PresenceAvatars } from '@/components/editor/PresenceAvatars';
-
-// Add before component
-const colors = ['#958DF1', '#F98181', '#FBBC88', '#FAF594', '#70CFF8', '#94FADB', '#B9F18D'];
-
-const getRandomColor = () => colors[Math.floor(Math.random() * colors.length)];
+  import { EditorSkeleton } from '@/components/ui/skeleton';
 
 export default function DocumentEditorPage() {
   const params = useParams();
@@ -34,67 +27,63 @@ export default function DocumentEditorPage() {
   const [title, setTitle] = useState('');
   const [saving, setSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
+  const [initialContent, setInitialContent] = useState<string>(''); // ← Add this
 
-  // ✅ Fix: provide initial value as null to useRef
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Socket.io connection
   const { connected, users, emitChange, onDocumentChange } = useSocket(documentId);
 
-  // ✅ TipTap Editor (Tiptap v3 setup)
-const editor = useEditor({
-  immediatelyRender: false,
-  extensions: [
-    StarterKit.configure({
-    }), // ← Configure history inside StarterKit
-    Placeholder.configure({
-      placeholder: 'Start writing...',
-    }),
-  ],
-  content: '',
-  editable: true,
-  onUpdate: ({ editor }) => {
-    const html = editor.getHTML();
-
-    if (document) {
-      emitChange(html, document.version);
-    }
-
-    if (saveTimeoutRef.current) {
-      clearTimeout(saveTimeoutRef.current);
-    }
-
-    saveTimeoutRef.current = setTimeout(() => {
-      handleAutoSave(html);
-    }, 2000);
-  },
-});
-const loadDocument = async () => {
-  try {
-    const doc = await documentService.getDocument(documentId);
-    console.log('📄 Document loaded:', doc); // ← Add this
-    console.log('📝 Content:', doc.content); // ← Add this
-    
-    setDocument(doc);
-    setTitle(doc.title);
-    
-    if (editor) {
-      console.log('✅ Setting content in editor'); // ← Add this
-      editor.commands.setContent(doc.content);
-    } else {
-      console.log('❌ Editor not ready yet'); // ← Add this
-    }
-  } catch (error: any) {
-    console.error('❌ Load error:', error); // ← Add this
-    toast.error('Failed to load document');
-  }
-};
+  // Load document FIRST
   useEffect(() => {
+    const loadDocument = async () => {
+      try {
+        const doc = await documentService.getDocument(documentId);
+        console.log('📄 Document loaded:', doc);
+        console.log('📝 Content:', doc.content);
+        
+        setDocument(doc);
+        setTitle(doc.title);
+        setInitialContent(doc.content); // ← Store content for editor
+      } catch (error: any) {
+        console.error('❌ Load error:', error);
+        toast.error('Failed to load document');
+      }
+    };
+
     loadDocument();
   }, [documentId]);
 
+  // Initialize editor with loaded content
+  const editor = useEditor({
+    immediatelyRender: false,
+    extensions: [
+      StarterKit,
+      Placeholder.configure({
+        placeholder: 'Start writing...',
+      }),
+    ],
+    content: initialContent, // ← Use loaded content
+    editable: true,
+    onUpdate: ({ editor }) => {
+      const html = editor.getHTML();
+
+      if (document) {
+        emitChange(html, document.version);
+      }
+
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+
+      saveTimeoutRef.current = setTimeout(() => {
+        handleAutoSave(html);
+      }, 2000);
+    },
+  }, [initialContent]); // ← Re-create editor when content changes
+
+  // Listen for real-time changes
   useEffect(() => {
-    // Listen for changes from other users
     onDocumentChange((data: any) => {
       console.log('Received change from:', data.username);
       if (editor && !editor.isFocused) {
@@ -102,19 +91,6 @@ const loadDocument = async () => {
       }
     });
   }, [editor]);
-
-  // const loadDocument = async () => {
-  //   try {
-  //     const doc = await documentService.getDocument(documentId);
-  //     setDocument(doc);
-  //     setTitle(doc.title);
-  //     if (editor) {
-  //       editor.commands.setContent(doc.content);
-  //     }
-  //   } catch (error: any) {
-  //     toast.error('Failed to load document');
-  //   }
-  // };
 
   const handleAutoSave = async (content: string) => {
     if (!document) return;
@@ -150,7 +126,21 @@ const loadDocument = async () => {
     }
   };
 
-  if (!document || !editor) {
+  // Show loading while document loads
+
+// In component:
+if (!document || !editor) {
+  return (
+    <ProtectedRoute>
+      <DashboardLayout>
+        <EditorSkeleton />
+      </DashboardLayout>
+    </ProtectedRoute>
+  );
+}
+
+  // Show loading while editor initializes
+  if (!editor) {
     return (
       <ProtectedRoute>
         <DashboardLayout>
@@ -192,7 +182,6 @@ const loadDocument = async () => {
             </div>
 
             <div className="flex items-center gap-4">
-              {/* Active Users */}
               <div className="flex items-center gap-2">
                 <Users className="w-4 h-4 text-gray-600" />
                 <span className="text-sm text-gray-600">
@@ -205,13 +194,13 @@ const loadDocument = async () => {
                 )}
               </div>
 
-             <div className="flex items-center gap-4">
-  <PresenceAvatars users={users} />
-  <Button onClick={handleManualSave} disabled={saving}>
-    <Save className="w-4 h-4 mr-2" />
-    Save
-  </Button>
-</div>
+              <div className="flex items-center gap-4">
+                <PresenceAvatars users={users} />
+                <Button onClick={handleManualSave} disabled={saving}>
+                  <Save className="w-4 h-4 mr-2" />
+                  Save
+                </Button>
+              </div>
             </div>
           </div>
 
@@ -245,7 +234,7 @@ const loadDocument = async () => {
           {/* Status Bar */}
           <div className="flex items-center justify-between text-sm text-gray-600 border-t pt-4 mt-4">
             <div>
-              Version {document.version} • {editor.storage.characterCount?.characters() || 0} characters
+              Version {document.version}
             </div>
             <div>
               Last edited {new Date(document.updatedAt).toLocaleString()}
