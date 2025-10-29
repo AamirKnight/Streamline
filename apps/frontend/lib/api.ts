@@ -1,6 +1,6 @@
 import axios from 'axios';
 import Cookies from 'js-cookie';
-
+import { handleApiError } from './error-handler';
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 const WORKSPACE_URL = process.env.NEXT_PUBLIC_WORKSPACE_URL || 'http://localhost:3002';
 const DOCUMENT_URL = process.env.NEXT_PUBLIC_DOCUMENT_URL || 'http://localhost:3003';
@@ -34,19 +34,6 @@ export const documentApi = axios.create({
 
 // Add token interceptor to all APIs
 [api, workspaceApi, documentApi].forEach((instance) => {
-  instance.interceptors.request.use(
-    (config) => {
-      const token = Cookies.get('accessToken');
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-      }
-      return config;
-    },
-    (error) => {
-      return Promise.reject(error);
-    }
-  );
-
   instance.interceptors.response.use(
     (response) => response,
     async (error) => {
@@ -72,6 +59,9 @@ export const documentApi = axios.create({
           return Promise.reject(refreshError);
         }
       }
+
+      // Handle error globally
+      handleApiError(error);
 
       return Promise.reject(error);
     }
