@@ -3,53 +3,125 @@ import { createServer } from 'http';
 import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
+import mongoSanitize from 'express-mongo-sanitize';
+import { xss } from 'express-xss-sanitizer';
+import hpp from 'hpp';
+
 import connectDatabase from './database';
 import { connectRedis } from './utils/redis';
-import documentRoutes from './routes/documentRoutes';
 import { setupSocketIO } from './socket';
+import documentRoutes from './routes/documentRoutes';
+import cacheRoutes from './routes/cacheRoutes';
+import { apiLimiter } from './middleware/rateLimitter';
 import logger from './utils/logger';
 import { config } from './config';
-import cacheRoutes from './routes/cacheRoutes';
 
 dotenv.config();
 
 const app = express();
 const httpServer = createServer(app);
 
-// Middleware
-app.use(helmet());
+// ---------------------------
+// ⚙️ 1. Core Middleware
+// ---------------------------
+
+app.use(express.json({ limit: '10mb' }));
+
 app.use(cors({
   origin: config.frontendUrl,
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }));
-app.use(express.json({ limit: '10mb' }));
 
-// Connect to MongoDB and Redis
-connectDatabase();
-connectRedis();
+// ---------------------------
+// 🛡️ 2. Security Middleware
+// ---------------------------
 
-// Setup Socket.io
-const io = setupSocketIO(httpServer);
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+    },
+  },
+  crossOriginEmbedderPolicy: false,
+}));
 
-// Make io available to routes
-app.set('io', io);
+app.use(apiLimiter);
+app.use(mongoSanitize());
+app.use(xss());
+app.use(hpp());
 
-// Routes
+// ---------------------------
+// 🧭 3. Routes
+// ---------------------------
+
 app.get('/health', (req, res) => {
   res.json({ status: 'OK', service: 'document', socketio: 'enabled' });
 });
 
-// Add route
-app.use('/cache', cacheRoutes);
 app.use('/documents', documentRoutes);
+app.use('/cache', cacheRoutes);
 
-// Error handling
+// ---------------------------
+// 🧩 4. Error Handling
+// ---------------------------
+
+// Mongoose, JWT, and generic errors
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  logger.error('Server error:', err);
-  res.status(500).json({ error: 'Internal server error' });
+  logger.error('Server error:', {
+    error: err.message,
+    stack: err.stack,
+    path: req.path,
+    method: req.method,
+  });
+
+  if (err.name === 'ValidationError') {
+    return res.status(400).json({
+      error: 'Validation Error',
+      details: Object.values(err.errors).map((e: any) => e.message),
+    });
+  }
+
+  if (err.name === 'CastError') {
+    return res.status(400).json({ error: 'Invalid ID format' });
+  }
+
+  if (err.name === 'JsonWebTokenError') {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+
+  if (err.name === 'TokenExpiredError') {
+    return res.status(401).json({ error: 'Token expired' });
+  }
+
+  res.status(err.statusCode || 500).json({
+    error: config.nodeEnv === 'production'
+      ? 'Internal server error'
+      : err.message,
+    ...(config.nodeEnv === 'development' && { stack: err.stack }),
+  });
 });
 
-// Start server
+// ---------------------------
+// 💾 5. Database & Redis Connections
+// ---------------------------
+
+connectDatabase();
+connectRedis();
+
+// ---------------------------
+// ⚡ 6. Socket.io Setup
+// ---------------------------
+
+const io = setupSocketIO(httpServer);
+app.set('io', io);
+
+// ---------------------------
+// 🚀 7. Start Server
+// ---------------------------
+
 if (config.nodeEnv !== 'test') {
   httpServer.listen(config.port, () => {
     logger.info(`Document service with Socket.io running on port ${config.port}`);

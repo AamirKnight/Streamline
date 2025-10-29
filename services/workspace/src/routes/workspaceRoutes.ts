@@ -17,12 +17,17 @@ const router = Router();
 // All routes require authentication
 router.use(authenticate);
 
+
+
+import { strictLimiter } from '../middleware/rateLimitter';
+
+router.post('/', authenticate, strictLimiter, createWorkspace);
+router.put('/:workspaceId', authenticate, isWorkspaceAdmin, strictLimiter, updateWorkspace);
+router.delete('/:workspaceId', authenticate, isWorkspaceAdmin, strictLimiter, deleteWorkspace);
 // Workspace CRUD
-router.post('/', createWorkspace);
+
 router.get('/', getWorkspaces);
 router.get('/:workspaceId', isWorkspaceMember, getWorkspaceById);
-router.put('/:workspaceId', isWorkspaceAdmin, updateWorkspace);
-router.delete('/:workspaceId', isWorkspaceAdmin, deleteWorkspace);
 
 // Member management
 router.get('/:workspaceId/members', isWorkspaceMember, getWorkspaceMembers);

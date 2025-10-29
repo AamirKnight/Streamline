@@ -9,6 +9,7 @@ import WorkspaceInvitation from './models/WorkspaceInvitation';
 import workspaceRoutes from './routes/workspaceRoutes';
 import logger from './utils/logger';
 import { connectCache } from './utils/cache';
+import { apiLimiter } from './middleware/rateLimitter';
 
 // After other connections
 
@@ -18,6 +19,8 @@ const app = express();
 const PORT = process.env.PORT || 3002;
 connectCache();
 // Middleware
+
+app.use(apiLimiter);
 app.use(helmet());
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:3000',
