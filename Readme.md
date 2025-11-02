@@ -159,9 +159,9 @@ streamline/
 ## 👨‍💻 Author
 
 **Your Name**
-- Portfolio: [yourwebsite.com](https://yourwebsite.com)
-- LinkedIn: [linkedin.com/in/yourprofile](https://linkedin.com/in/yourprofile)
-- Email: your.email@example.com
+- Portfolio: [yourwebsite.com](https://portfolio-aamirs-projects-da06cbac.vercel.app/)
+- LinkedIn: [linkedin.com/in/yourprofile](https://www.linkedin.com/in/aamir-arshad-developer/)
+- Email: arshadaamir09@gmail.com
 
 ## 📄 License
 

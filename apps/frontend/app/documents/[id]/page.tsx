@@ -17,7 +17,8 @@ import { Save, ArrowLeft, Users } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { PresenceAvatars } from '@/components/editor/PresenceAvatars';
   import { EditorSkeleton } from '@/components/ui/skeleton';
-
+import { AIInsightsPanel } from '@/components/ai/AIinsightPannel';
+import { DocumentSummary } from '@/components/ai/DocummentSummary';
 export default function DocumentEditorPage() {
   const params = useParams();
   const router = useRouter();
@@ -130,13 +131,34 @@ export default function DocumentEditorPage() {
 
 // In component:
 if (!document || !editor) {
-  return (
-    <ProtectedRoute>
-      <DashboardLayout>
-        <EditorSkeleton />
-      </DashboardLayout>
-    </ProtectedRoute>
-  );
+return (
+  <ProtectedRoute>
+    <DashboardLayout>
+      <div className="flex h-[calc(100vh-8rem)]">
+        <div className="flex-1 space-y-4 overflow-y-auto pr-4">
+          {/* Header */}
+          <div className="flex items-center justify-between border-b pb-4">
+            {/* ... existing header code ... */}
+          </div>
+
+          {/* AI Summary Button */}
+          <DocumentSummary documentId={documentId} />
+
+          {/* Editor */}
+          <div className="border rounded-lg bg-white shadow-sm overflow-hidden">
+            <EditorToolbar editor={editor} />
+            <div className="tiptap-editor">
+              <EditorContent editor={editor} />
+            </div>
+          </div>
+        </div>
+
+        {/* AI Insights Panel */}
+        <AIInsightsPanel documentId={documentId} />
+      </div>
+    </DashboardLayout>
+  </ProtectedRoute>
+);
 }
 
   // Show loading while editor initializes

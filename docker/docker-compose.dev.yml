@@ -19,6 +19,24 @@ services:
       timeout: 20s
       retries: 10
 
+  # PostgreSQL with pgvector for AI Embeddings
+  postgres:
+    image: ankane/pgvector:latest
+    container_name: streamline-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: streamline_vectors
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgvector_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # MongoDB for Documents and Logs
   mongodb:
     image: mongo:7.0
@@ -69,6 +87,7 @@ volumes:
   mongodb_data:
   redis_data:
   rabbitmq_data:
+  pgvector_data:
 
 networks:
   default:

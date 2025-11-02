@@ -12,7 +12,7 @@ import { documentService, type Document } from '@/lib/document';
 import { useDebounce } from '@/hooks/useDebounce';
 import { toast } from 'sonner';
 import { Plus, FileText, Clock, ArrowLeft, Search } from 'lucide-react';
-
+import { AISearch } from '@/components/ai/AISearch';
 export default function WorkspaceDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -92,7 +92,8 @@ export default function WorkspaceDetailPage() {
               <ArrowLeft className="w-4 h-4 mr-2" />
               Back to Workspaces
             </Button>
-
+{/* AI Search */}
+<AISearch workspaceId={workspaceId} />
             <div className="flex items-center justify-between">
               <div>
                 <h1 className="text-3xl font-bold">{workspace.name}</h1>

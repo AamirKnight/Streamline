@@ -7,14 +7,15 @@
     "setup": "npm install && npm run setup:services",
     "setup:services": "npm install --workspace=./services/auth --workspace=./services/workspace --workspace=./services/document --workspace=./services/notification --workspace=./services/file && npm install --workspace=./apps/frontend",
     "dev": "docker-compose -f docker/docker-compose.dev.yml up",
-    "dev:all": "concurrently -n \"auth,workspace,document,frontend\" -c \"blue,green,yellow,magenta\" \"npm run dev:auth\" \"npm run dev:workspace\" \"npm run dev:document\" \"npm run dev:frontend\"",
+   "dev:all": "concurrently -n \"auth,workspace,document,ai,frontend\" -c \"blue,green,yellow,cyan,magenta\" \"npm run dev:auth\" \"npm run dev:workspace\" \"npm run dev:document\" \"npm run dev:ai\" \"npm run dev:frontend\"",
     "dev:services": "concurrently -n \"auth,workspace,document\" -c \"blue,green,yellow\" \"npm run dev:auth\" \"npm run dev:workspace\" \"npm run dev:document\"",
     "dev:auth": "npm -w services/auth run dev",
     "dev:workspace": "npm -w services/workspace run dev",
     "dev:document": "npm -w services/document run dev",
     "dev:frontend": "npm -w apps/frontend run dev",
     "build": "npm run build --workspaces",
-    "test": "npm test --workspaces"
+    "test": "npm test --workspaces",
+    "dev:ai": "cd services/ai && npm run dev"
   },
   "workspaces": [
     "services/*",

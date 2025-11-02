@@ -5,6 +5,7 @@ import { ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants';
 import logger from '../utils/logger';
 import { Server } from 'socket.io';
 import { cache } from '../utils/cahce';
+import aiPublisher from '../utils/aiPublisher'
 
 export const createDocument = async (req: Request, res: Response) => {
   try {
@@ -23,7 +24,6 @@ export const createDocument = async (req: Request, res: Response) => {
       return res.status(400).json({ error: ERROR_MESSAGES.WORKSPACE_ID_REQUIRED });
     }
 
-    // Create document
     const document = await Document.create({
       title,
       content: content || '',
@@ -33,13 +33,20 @@ export const createDocument = async (req: Request, res: Response) => {
       version: 1,
     });
 
-    // Create initial version
     await DocumentVersion.create({
       documentId: document._id.toString(),
       content: content || '',
       versionNumber: 1,
       createdBy: userId,
     });
+
+    // Queue for AI indexing
+    await aiPublisher.publishForIndexing(
+      document._id.toString(),
+      document.workspaceId,
+      document.content,
+      'create'
+    );
 
     logger.info('Document created', { documentId: document._id, userId });
 
@@ -64,7 +71,6 @@ export const getDocuments = async (req: Request, res: Response) => {
 
     let query: any = { workspaceId: parseInt(workspaceId as string) };
 
-    // Add text search if provided
     if (search) {
       query.$text = { $search: search as string };
     }
@@ -80,11 +86,6 @@ export const getDocuments = async (req: Request, res: Response) => {
   }
 };
 
-
-
-
-// ... existing imports
-
 export const deleteDocument = async (req: Request, res: Response) => {
   try {
     const { documentId } = req.params;
@@ -95,7 +96,14 @@ export const deleteDocument = async (req: Request, res: Response) => {
       return res.status(404).json({ error: ERROR_MESSAGES.DOCUMENT_NOT_FOUND });
     }
 
-    // Delete document and all versions
+    // Queue for AI deletion
+    await aiPublisher.publishForIndexing(
+      documentId,
+      document.workspaceId,
+      '',
+      'delete'
+    );
+
     await Document.findByIdAndDelete(documentId);
     await DocumentVersion.deleteMany({ documentId });
 
@@ -159,24 +167,21 @@ export const searchDocuments = async (req: Request, res: Response) => {
 export const getDocumentById = async (req: Request, res: Response) => {
   try {
     const { documentId } = req.params;
-    
-    // Try cache first
+
     const cacheKey = `document:${documentId}`;
     const cachedDoc = await cache.get(cacheKey);
-    
+
     if (cachedDoc) {
       return res.json({ document: cachedDoc });
     }
 
-    // Cache miss - get from database
     const document = await Document.findById(documentId);
 
     if (!document) {
       return res.status(404).json({ error: ERROR_MESSAGES.DOCUMENT_NOT_FOUND });
     }
 
-    // Store in cache
-    await cache.set(cacheKey, document, 3600); // 1 hour
+    await cache.set(cacheKey, document, 3600);
 
     res.json({ document });
   } catch (error: any) {
@@ -200,13 +205,11 @@ export const updateDocument = async (req: Request, res: Response) => {
       return res.status(404).json({ error: ERROR_MESSAGES.DOCUMENT_NOT_FOUND });
     }
 
-    // Update document
     if (title) document.title = title;
     if (content !== undefined) {
       document.content = content;
       document.version += 1;
-      
-      // Save version history
+
       await DocumentVersion.create({
         documentId: document._id.toString(),
         content,
@@ -214,17 +217,23 @@ export const updateDocument = async (req: Request, res: Response) => {
         createdBy: userId!,
       });
     }
-    
+
     document.lastEditedBy = userId;
     await document.save();
 
-    // Invalidate cache
+    // Queue for AI re-indexing
+    await aiPublisher.publishForIndexing(
+      document._id.toString(),
+      document.workspaceId,
+      document.content,
+      'update'
+    );
+
     await cache.del(`document:${documentId}`);
     await cache.delPattern(`documents:workspace:${document.workspaceId}*`);
 
     logger.info('Document updated', { documentId, userId });
 
-    // Broadcast update via Socket.io
     const io: Server = req.app.get('io');
     if (io) {
       io.to(`document:${documentId}`).emit('document:updated', {

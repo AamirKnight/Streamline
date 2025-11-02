@@ -15,6 +15,7 @@ import cacheRoutes from './routes/cacheRoutes';
 import { apiLimiter } from './middleware/rateLimitter';
 import logger from './utils/logger';
 import { config } from './config';
+import aiPublisher from './utils/aiPublisher';
 
 dotenv.config();
 
@@ -26,7 +27,7 @@ const httpServer = createServer(app);
 // ---------------------------
 
 app.use(express.json({ limit: '10mb' }));
-
+aiPublisher.connect();
 app.use(cors({
   origin: config.frontendUrl,
   credentials: true,
