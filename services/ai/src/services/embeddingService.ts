@@ -2,14 +2,13 @@ import { HfInference } from '@huggingface/inference';
 import logger from '../utils/logger';
 import { config } from '../config';
 
-const hf = new HfInference(config.huggingface.apiKey); // Changed from config.hfToken
-
 interface EmbeddingTask {
   text: string;
   fn: (embedding: number[]) => Promise<void>;
 }
 
 class EmbeddingService {
+  private hf: HfInference;
   private queue: EmbeddingTask[] = [];
   private processing = false;
   private readonly BATCH_SIZE = 5;
@@ -17,6 +16,7 @@ class EmbeddingService {
   private readonly RETRY_DELAY = 2000;
 
   constructor() {
+    this.hf = new HfInference(config.huggingface.apiKey);
     logger.info('🤖 Embedding service initialized');
   }
 
@@ -89,44 +89,82 @@ class EmbeddingService {
   }
 
   /**
-   * Generate embedding using HuggingFace Inference API
+   * Generate embedding using HuggingFace Inference SDK
+   * FIXED: Uses the official SDK's featureExtraction method
    */
-  private async generateHuggingFaceEmbedding(text: string): Promise<number[]> {
-    try {
-      const result = await hf.featureExtraction({
-        model: config.huggingface.model,
+ private async generateHuggingFaceEmbedding(text: string): Promise<number[]> {
+  try {
+    // Construct proper API endpoint
+    const apiUrl = `${config.huggingface.apiUrl}/${config.huggingface.model}`;
+    
+    logger.info(`Calling HuggingFace API: ${apiUrl}`);
+
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${config.huggingface.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
         inputs: text,
-      });
+        options: { wait_for_model: true }
+      }),
+    });
 
-      let embedding: number[];
+    if (!response.ok) {
+      const errorText = await response.text();
       
-      if (Array.isArray(result)) {
-        if (Array.isArray(result[0])) {
-          embedding = result[0] as number[];
-        } else {
-          embedding = result as number[];
-        }
-      } else {
-        throw new Error('Unexpected embedding format from HuggingFace');
-      }
-
-      if (!embedding || embedding.length === 0) {
-        throw new Error('Empty embedding received');
-      }
-
-      return embedding;
-
-    } catch (error: any) {
-      if (error.message?.includes('401') || error.message?.includes('authentication')) {
-        throw new Error('HuggingFace API token is invalid. Get a new one from https://huggingface.co/settings/tokens');
-      } else if (error.message?.includes('429') || error.message?.includes('rate limit')) {
-        throw new Error('HuggingFace rate limit exceeded. Try again in a few minutes.');
-      } else if (error.message?.includes('fetch') || error.message?.includes('blob')) {
-        throw new Error('Network error connecting to HuggingFace. Check your internet connection.');
+      if (response.status === 404) {
+        throw new Error('Model endpoint not found. Check model name.');
+      } else if (response.status === 401) {
+        throw new Error('Invalid HF token.');
+      } else if (response.status === 429) {
+        throw new Error('Rate limit exceeded.');
       }
       
-      throw error;
+      throw new Error(`API error ${response.status}: ${errorText}`);
     }
+
+    const result = await response.json();
+    
+    // Handle response
+    let embedding: number[];
+    
+    if (Array.isArray(result) && typeof result[0] === 'number') {
+      embedding = result;
+    } else if (Array.isArray(result) && Array.isArray(result[0])) {
+      // Token embeddings - apply mean pooling
+      embedding = this.meanPooling(result as number[][]);
+    } else {
+      throw new Error('Invalid response format');
+    }
+
+    logger.info(`✅ Embedding generated (dimension: ${embedding.length})`);
+    return embedding;
+    
+  } catch (error: any) {
+    logger.error('HuggingFace API error:', error.message);
+    throw error;
+  }
+}
+
+
+
+  /**
+   * Mean pooling for token embeddings
+   */
+  private meanPooling(tokenEmbeddings: number[][]): number[] {
+    const numTokens = tokenEmbeddings.length;
+    const dimension = tokenEmbeddings[0].length;
+    const pooled = new Array(dimension).fill(0);
+
+    for (let i = 0; i < numTokens; i++) {
+      for (let j = 0; j < dimension; j++) {
+        pooled[j] += tokenEmbeddings[i][j];
+      }
+    }
+
+    return pooled.map(val => val / numTokens);
   }
 
   /**
@@ -210,6 +248,26 @@ class EmbeddingService {
    */
   private sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Health check for embedding service
+   */
+  async healthCheck(): Promise<{ status: string; provider: string; dimension?: number }> {
+    try {
+      const testEmbedding = await this.generateHuggingFaceEmbedding('test');
+      return {
+        status: 'healthy',
+        provider: 'huggingface',
+        dimension: testEmbedding.length
+      };
+    } catch (error: any) {
+      logger.warn(`HuggingFace health check failed: ${error.message}`);
+      return {
+        status: 'degraded',
+        provider: 'local'
+      };
+    }
   }
 }
 

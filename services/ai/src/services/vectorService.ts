@@ -1,6 +1,6 @@
+// services/ai/src/services/vectorService.ts
 import { QueryTypes } from 'sequelize';
 import sequelize from '../database';
-import DocumentEmbedding from '../models/DocumentEmbedding';
 import embeddingService from './embeddingService';
 import logger from '../utils/logger';
 
@@ -25,7 +25,7 @@ function chunkText(text: string, chunkSize: number = 400): string[] {
     }
   }
   
-  return chunks.length > 0 ? chunks : [text]; // Return full text if no chunks
+  return chunks.length > 0 ? chunks : [text];
 }
 
 class VectorService {
@@ -36,38 +36,55 @@ class VectorService {
     query: string,
     workspaceId: number,
     topK: number = 5,
-    threshold: number = 0.5
+    threshold: number = 0.3  // Lowered for better results
   ): Promise<SearchResult[]> {
     try {
+      logger.info('Starting vector search', { 
+        query: query.substring(0, 50),
+        workspaceId,
+        topK 
+      });
+
+      // Generate query embedding
       const queryEmbedding = await embeddingService.generateEmbedding(query);
+      logger.info('Query embedding generated', { 
+        dimension: queryEmbedding.length 
+      });
+
       const vectorString = `[${queryEmbedding.join(',')}]`;
 
+      // Perform vector similarity search
       const results = await sequelize.query<SearchResult>(
         `
         SELECT 
           document_id as "documentId",
           chunk_text as "chunkText",
           chunk_index as "chunkIndex",
-          1 - (embedding <=> $1::vector) as similarity
+          (1 - (embedding <=> $1::vector))::float as similarity
         FROM document_embeddings
         WHERE workspace_id = $2
-          AND 1 - (embedding <=> $1::vector) > $3
+          AND (1 - (embedding <=> $1::vector)) > $3
         ORDER BY embedding <=> $1::vector
         LIMIT $4
         `,
         {
-          bind: [vectorString, workspaceId, threshold, topK],
+          bind: [vectorString, workspaceId, threshold, topK * 3],
           type: QueryTypes.SELECT,
         }
       );
 
       logger.info('Vector search completed', { 
-        query: query.substring(0, 50),
-        resultsCount: results.length 
+        resultsCount: results.length,
+        topSimilarity: results[0]?.similarity 
       });
 
-      return results;
-    } catch (error) {
+      // Filter and limit results
+      const filteredResults = results
+        .filter(r => r.similarity > threshold)
+        .slice(0, topK);
+
+      return filteredResults;
+    } catch (error: any) {
       logger.error('Vector search error:', error);
       throw error;
     }
@@ -82,12 +99,20 @@ class VectorService {
     content: string
   ): Promise<void> {
     try {
-      // Delete existing embeddings for this document
-      await DocumentEmbedding.destroy({ where: { documentId } });
+      logger.info('Starting document indexing', { 
+        documentId,
+        contentLength: content.length 
+      });
+
+      // Delete existing embeddings using raw SQL
+      await sequelize.query(
+        'DELETE FROM document_embeddings WHERE document_id = $1',
+        { bind: [documentId], type: QueryTypes.DELETE }
+      );
 
       // Split content into chunks
       const chunks = chunkText(content, 400);
-
+      
       if (chunks.length === 0) {
         logger.warn('No chunks to index', { documentId });
         return;
@@ -101,32 +126,30 @@ class VectorService {
       // Generate embeddings for all chunks
       const embeddings = await embeddingService.generateBatchEmbeddings(chunks);
 
-      // Prepare records for bulk insert using raw SQL (to handle vector type)
-      const insertPromises = chunks.map(async (chunk, index) => {
-        const vectorString = `[${embeddings[index].join(',')}]`;
+      // Insert embeddings using raw SQL
+      for (let i = 0; i < chunks.length; i++) {
+        const vectorString = `[${embeddings[i].join(',')}]`;
         
         await sequelize.query(
           `
           INSERT INTO document_embeddings 
-            (document_id, workspace_id, chunk_text, chunk_index, embedding, created_at, updated_at)
+            (document_id, workspace_id, chunk_text, chunk_index, embedding, created_at)
           VALUES 
-            ($1, $2, $3, $4, $5::vector, NOW(), NOW())
+            ($1, $2, $3, $4, $5::vector, NOW())
           `,
           {
-            bind: [documentId, workspaceId, chunk, index, vectorString],
+            bind: [documentId, workspaceId, chunks[i], i, vectorString],
             type: QueryTypes.INSERT,
           }
         );
-      });
-
-      await Promise.all(insertPromises);
+      }
 
       logger.info('Document indexed successfully', { 
         documentId, 
         chunkCount: chunks.length 
       });
 
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Document indexing error:', error);
       throw error;
     }
@@ -142,7 +165,7 @@ class VectorService {
       content: string;
     }>
   ): Promise<void> {
-    logger.info(`Indexing ${documents.length} documents`);
+    logger.info(`Bulk indexing ${documents.length} documents`);
 
     for (const doc of documents) {
       try {
@@ -157,13 +180,18 @@ class VectorService {
   }
 
   /**
-   * Delete all embeddings for a document
+   * Delete all embeddings for a document (FIXED VERSION)
    */
   async deleteDocumentEmbeddings(documentId: string): Promise<void> {
     try {
-      await DocumentEmbedding.destroy({ where: { documentId } });
+      // Use raw SQL instead of Sequelize ORM
+      await sequelize.query(
+        'DELETE FROM document_embeddings WHERE document_id = $1',
+        { bind: [documentId], type: QueryTypes.DELETE }
+      );
+      
       logger.info('Document embeddings deleted', { documentId });
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Error deleting document embeddings:', error);
       throw error;
     }
@@ -180,8 +208,8 @@ class VectorService {
       const [result] = await sequelize.query(
         `
         SELECT 
-          COUNT(DISTINCT document_id) as "totalDocuments",
-          COUNT(*) as "totalChunks"
+          COUNT(DISTINCT document_id)::int as "totalDocuments",
+          COUNT(*)::int as "totalChunks"
         FROM document_embeddings
         WHERE workspace_id = $1
         `,
@@ -192,7 +220,7 @@ class VectorService {
       );
 
       return result as any;
-    } catch (error) {
+    } catch (error: any) {
       logger.error('Error getting workspace stats:', error);
       throw error;
     }
@@ -208,6 +236,55 @@ class VectorService {
   ): Promise<void> {
     logger.info('Reindexing document', { documentId });
     await this.indexDocument(documentId, workspaceId, content);
+  }
+
+  /**
+   * Check if a document is indexed
+   */
+  async isDocumentIndexed(documentId: string): Promise<boolean> {
+    try {
+      const [result] = await sequelize.query(
+        `
+        SELECT EXISTS(
+          SELECT 1 FROM document_embeddings 
+          WHERE document_id = $1
+        ) as exists
+        `,
+        {
+          bind: [documentId],
+          type: QueryTypes.SELECT,
+        }
+      );
+
+      return (result as any).exists;
+    } catch (error: any) {
+      logger.error('Error checking if document indexed:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Get indexed document count for workspace
+   */
+  async getIndexedDocumentCount(workspaceId: number): Promise<number> {
+    try {
+      const [result] = await sequelize.query(
+        `
+        SELECT COUNT(DISTINCT document_id)::int as count
+        FROM document_embeddings
+        WHERE workspace_id = $1
+        `,
+        {
+          bind: [workspaceId],
+          type: QueryTypes.SELECT,
+        }
+      );
+
+      return (result as any).count || 0;
+    } catch (error: any) {
+      logger.error('Error getting indexed document count:', error);
+      return 0;
+    }
   }
 }
 
