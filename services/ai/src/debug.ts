@@ -16,7 +16,7 @@ async function testVectorIndexing() {
     // Test 2: Index a test document
     console.log('Test 2: Index a test document');
     const testDocId = 'test-doc-' + Date.now();
-    const testWorkspaceId = 1; // Replace with your actual workspace ID
+    const testWorkspaceId = 1;
     const testContent = `
       This is a comprehensive test document about artificial intelligence.
       Machine learning is a subset of AI that focuses on learning from data.
@@ -30,30 +30,54 @@ async function testVectorIndexing() {
     // Test 3: Search for similar content
     console.log('Test 3: Search for similar content');
     const query = "What is machine learning?";
+    console.log(`Query: "${query}"`);
+    
     const results = await vectorService.searchSimilarDocuments(query, testWorkspaceId, 3);
     
-    console.log(`✅ Found ${results.length} similar chunks:`);
-    results.forEach((result, i) => {
-      console.log(`\n${i + 1}. Similarity: ${result.similarity.toFixed(4)}`);
-      console.log(`   Text: ${result.chunkText.substring(0, 100)}...`);
-    });
+    if (results.length === 0) {
+      console.log('⚠️  No similar chunks found');
+    } else {
+      console.log(`✅ Found ${results.length} similar chunks:`);
+      results.forEach((result, i) => {
+        console.log(`\n${i + 1}. Similarity: ${result.similarity.toFixed(4)}`);
+        console.log(`   Document ID: ${result.documentId}`);
+        console.log(`   Chunk Index: ${result.chunkIndex}`);
+        console.log(`   Text: ${result.chunkText.substring(0, 80)}...`);
+      });
+    }
+    console.log();
 
     // Test 4: Get workspace stats
-    console.log('\nTest 4: Workspace stats');
+    console.log('Test 4: Workspace stats');
     const stats = await vectorService.getWorkspaceStats(testWorkspaceId);
-    console.log(`✅ Stats:`, stats);
+    console.log(`✅ Total Documents: ${stats.totalDocuments}`);
+    console.log(`✅ Total Chunks: ${stats.totalChunks}\n`);
+
+    // Test 5: Check if document is indexed
+    console.log('Test 5: Check document index status');
+    const isIndexed = await vectorService.isDocumentIndexed(testDocId);
+    console.log(`✅ Document is indexed: ${isIndexed}\n`);
 
     // Cleanup
-    console.log('\nCleaning up test data...');
+    console.log('Cleaning up test data...');
     await vectorService.deleteDocumentEmbeddings(testDocId);
     console.log('✅ Cleanup complete\n');
 
-    console.log('🎉 All tests passed!');
+    // Verify cleanup
+    const isIndexedAfter = await vectorService.isDocumentIndexed(testDocId);
+    console.log(`✅ Document deleted: ${!isIndexedAfter}\n`);
+
+    console.log('🎉 All tests passed!\n');
+    
   } catch (error: any) {
     console.error('❌ Test failed:', error.message);
+    console.error('Stack:', error.stack);
+    
     if (error.response) {
       console.error('Response data:', error.response.data);
     }
+    
+    process.exit(1);
   }
 }
 

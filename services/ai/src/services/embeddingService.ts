@@ -1,4 +1,3 @@
-import { HfInference } from '@huggingface/inference';
 import logger from '../utils/logger';
 import { config } from '../config';
 
@@ -8,7 +7,6 @@ interface EmbeddingTask {
 }
 
 class EmbeddingService {
-  private hf: HfInference;
   private queue: EmbeddingTask[] = [];
   private processing = false;
   private readonly BATCH_SIZE = 5;
@@ -16,7 +14,11 @@ class EmbeddingService {
   private readonly RETRY_DELAY = 2000;
 
   constructor() {
-    this.hf = new HfInference(config.huggingface.apiKey);
+    // Validate config on startup
+    if (!config.huggingface.apiKey) {
+      logger.error('❌ HF_TOKEN is not set in environment variables');
+      throw new Error('HF_TOKEN environment variable is required');
+    }
     logger.info('🤖 Embedding service initialized');
   }
 
@@ -40,6 +42,12 @@ class EmbeddingService {
           return embedding;
         } catch (hfError: any) {
           logger.warn(`⚠️  HuggingFace failed: ${hfError.message}`);
+          
+          // Only fall back to local if it's not a rate limit or auth error
+          if (hfError.message.includes('429') || hfError.message.includes('401')) {
+            throw hfError;
+          }
+          
           logger.info('🔄 Falling back to local embedding generation');
           return this.generateLocalEmbedding(truncatedText);
         }
@@ -89,66 +97,80 @@ class EmbeddingService {
   }
 
   /**
-   * Generate embedding using HuggingFace Inference SDK
-   * FIXED: Uses the official SDK's featureExtraction method
+   * Generate embedding using HuggingFace API (Direct Fetch)
+   * FIXED: Uses correct /models/ endpoint instead of /pipeline/feature-extraction/
    */
- private async generateHuggingFaceEmbedding(text: string): Promise<number[]> {
-  try {
-    // Construct proper API endpoint
-    const apiUrl = `${config.huggingface.apiUrl}/${config.huggingface.model}`;
-    
-    logger.info(`Calling HuggingFace API: ${apiUrl}`);
+  private async generateHuggingFaceEmbedding(text: string): Promise<number[]> {
+    try {
+      // ✅ FIXED: Construct API URL correctly
+      const apiUrl = `${config.huggingface.apiUrl}/${config.huggingface.model}`;
+      logger.info(`Calling HuggingFace API: ${apiUrl}`);
 
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${config.huggingface.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        inputs: text,
-        options: { wait_for_model: true }
-      }),
-    });
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${config.huggingface.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          inputs: text,
+          options: {
+            wait_for_model: true,
+            use_cache: false,
+          }
+        }),
+      });
 
-    if (!response.ok) {
-      const errorText = await response.text();
+      if (!response.ok) {
+        const errorText = await response.text();
+        
+        if (response.status === 401) {
+          throw new Error('Invalid HuggingFace token (401) - check HF_TOKEN');
+        } else if (response.status === 403) {
+          throw new Error('Token lacks permissions (403)');
+        } else if (response.status === 404) {
+          throw new Error(`Model not found (404) - check model name: ${config.huggingface.model}`);
+        } else if (response.status === 429) {
+          throw new Error('Rate limit exceeded (429) - upgrade account or wait');
+        } else if (response.status === 503) {
+          throw new Error('Model loading, retry in 20s (503)');
+        }
+        
+        throw new Error(`HuggingFace API error ${response.status}: ${errorText}`);
+      }
+
+      const result = await response.json();
       
-      if (response.status === 404) {
-        throw new Error('Model endpoint not found. Check model name.');
-      } else if (response.status === 401) {
-        throw new Error('Invalid HF token.');
-      } else if (response.status === 429) {
-        throw new Error('Rate limit exceeded.');
+      // Handle response format
+      if (!Array.isArray(result)) {
+        throw new Error('Invalid response format from HuggingFace');
       }
       
-      throw new Error(`API error ${response.status}: ${errorText}`);
+      if (result.length === 0) {
+        throw new Error('Empty response from HuggingFace');
+      }
+      
+      // Check if it's a flat array of numbers (single embedding)
+      if (typeof result[0] === 'number') {
+        logger.info(`✅ Embedding generated (dimension: ${result.length})`);
+        return result as number[];
+      }
+      
+      // Check if it's token embeddings (2D array) - apply mean pooling
+      if (Array.isArray(result[0])) {
+        logger.info('Token embeddings detected, applying mean pooling');
+        const embedding = this.meanPooling(result as number[][]);
+        logger.info(`✅ Embedding generated via mean pooling (dimension: ${embedding.length})`);
+        return embedding;
+      }
+      
+      throw new Error('Invalid response format from HuggingFace');
+      
+    } catch (error: any) {
+      logger.error('HuggingFace API error:', error.message);
+      throw error;
     }
-
-    const result = await response.json();
-    
-    // Handle response
-    let embedding: number[];
-    
-    if (Array.isArray(result) && typeof result[0] === 'number') {
-      embedding = result;
-    } else if (Array.isArray(result) && Array.isArray(result[0])) {
-      // Token embeddings - apply mean pooling
-      embedding = this.meanPooling(result as number[][]);
-    } else {
-      throw new Error('Invalid response format');
-    }
-
-    logger.info(`✅ Embedding generated (dimension: ${embedding.length})`);
-    return embedding;
-    
-  } catch (error: any) {
-    logger.error('HuggingFace API error:', error.message);
-    throw error;
   }
-}
-
-
 
   /**
    * Mean pooling for token embeddings

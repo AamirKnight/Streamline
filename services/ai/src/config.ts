@@ -1,6 +1,5 @@
 import dotenv from 'dotenv';
 
-// Load environment variables from .env file
 dotenv.config();
 
 export const config = {
@@ -24,29 +23,24 @@ export const config = {
     model: 'gemini-pro',
     rateLimit: 60,
   },
- // Update your config.ts
-huggingface: {
-  apiKey: process.env.HF_TOKEN || '',
-  model: 'Xenova/all-MiniLM-L6-v2',
-  embeddingDimension: 384,
-  // CORRECT: Use /models/ endpoint instead of /pipeline/
-  apiUrl: 'https://api-inference.huggingface.co/models',
-  timeout: 30000,
-  retryAttempts: 3,
-  retryDelay: 2000,
-},
+  huggingface: {
+    apiKey: process.env.HF_TOKEN || '',
+    model: 'BAAI/bge-small-en-v1.5',
+    embeddingDimension: 384,
+    // ✅ UPDATED: New router endpoint instead of deprecated api-inference
+    apiUrl: 'https://router.huggingface.co/hf-inference/models',
+    timeout: 30000,
+    retryAttempts: 3,
+    retryDelay: 2000,
+  },
   documentServiceUrl: process.env.DOCUMENT_SERVICE_URL || 'http://localhost:3003',
   authServiceUrl: process.env.AUTH_SERVICE_URL || 'http://localhost:3001',
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
 };
 
-// Optional: Add validation for critical env vars
+// Validation
 if (!config.huggingface.apiKey) {
-  console.warn('⚠️  Warning: HF_TOKEN is not set in .env file');
-}
-
-if (!config.gemini.apiKey) {
-  console.warn('⚠️  Warning: GEMINI_API_KEY is not set in .env file');
+  console.warn('⚠️ Warning: HF_TOKEN is not set in .env file');
 }
 
 export default config;
