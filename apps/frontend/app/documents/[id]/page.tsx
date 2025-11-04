@@ -1,3 +1,4 @@
+// apps/frontend/app/documents/[id]/page.tsx
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
@@ -13,12 +14,14 @@ import { EditorToolbar } from '@/components/editor/EditorToolbar';
 import { documentService, type Document } from '@/lib/document';
 import { useSocket } from '@/hooks/useSocket';
 import { toast } from 'sonner';
-import { Save, ArrowLeft, Users } from 'lucide-react';
+import { Save, ArrowLeft, Users, Wand2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { PresenceAvatars } from '@/components/editor/PresenceAvatars';
-  import { EditorSkeleton } from '@/components/ui/skeleton';
+import { EditorSkeleton } from '@/components/ui/skeleton';
 import { AIInsightsPanel } from '@/components/ai/AIinsightPannel';
 import { DocumentSummary } from '@/components/ai/DocummentSummary';
+import { AIWritingAssistant } from '@/components/ai/AIWritingAssistant';
+
 export default function DocumentEditorPage() {
   const params = useParams();
   const router = useRouter();
@@ -28,24 +31,25 @@ export default function DocumentEditorPage() {
   const [title, setTitle] = useState('');
   const [saving, setSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
-  const [initialContent, setInitialContent] = useState<string>(''); // ← Add this
+  const [initialContent, setInitialContent] = useState<string>('');
+  
+  // ✨ NEW: Writing Assistant State
+  const [selectedText, setSelectedText] = useState('');
+  const [showWritingAssistant, setShowWritingAssistant] = useState(false);
 
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Socket.io connection
   const { connected, users, emitChange, onDocumentChange } = useSocket(documentId);
 
-  // Load document FIRST
   useEffect(() => {
     const loadDocument = async () => {
       try {
         const doc = await documentService.getDocument(documentId);
         console.log('📄 Document loaded:', doc);
-        console.log('📝 Content:', doc.content);
         
         setDocument(doc);
         setTitle(doc.title);
-        setInitialContent(doc.content); // ← Store content for editor
+        setInitialContent(doc.content);
       } catch (error: any) {
         console.error('❌ Load error:', error);
         toast.error('Failed to load document');
@@ -55,7 +59,6 @@ export default function DocumentEditorPage() {
     loadDocument();
   }, [documentId]);
 
-  // Initialize editor with loaded content
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [
@@ -64,7 +67,7 @@ export default function DocumentEditorPage() {
         placeholder: 'Start writing...',
       }),
     ],
-    content: initialContent, // ← Use loaded content
+    content: initialContent,
     editable: true,
     onUpdate: ({ editor }) => {
       const html = editor.getHTML();
@@ -81,9 +84,19 @@ export default function DocumentEditorPage() {
         handleAutoSave(html);
       }, 2000);
     },
-  }, [initialContent]); // ← Re-create editor when content changes
+    // ✨ NEW: Capture text selection
+    onSelectionUpdate: ({ editor }) => {
+      const { from, to } = editor.state.selection;
+      const text = editor.state.doc.textBetween(from, to, ' ');
+      
+      if (text.length > 10 && text.length < 2000) {
+        setSelectedText(text);
+      } else {
+        setSelectedText('');
+      }
+    },
+  }, [initialContent]);
 
-  // Listen for real-time changes
   useEffect(() => {
     onDocumentChange((data: any) => {
       console.log('Received change from:', data.username);
@@ -127,47 +140,30 @@ export default function DocumentEditorPage() {
     }
   };
 
-  // Show loading while document loads
+  // ✨ NEW: Handle improved text from AI
+  const handleAcceptImprovedText = (improvedText: string) => {
+    if (!editor) return;
 
-// In component:
-if (!document || !editor) {
-return (
-  <ProtectedRoute>
-    <DashboardLayout>
-      <div className="flex h-[calc(100vh-8rem)]">
-        <div className="flex-1 space-y-4 overflow-y-auto pr-4">
-          {/* Header */}
-          <div className="flex items-center justify-between border-b pb-4">
-            {/* ... existing header code ... */}
-          </div>
+    const { from, to } = editor.state.selection;
+    editor.chain()
+      .focus()
+      .deleteRange({ from, to })
+      .insertContent(improvedText)
+      .run();
 
-          {/* AI Summary Button */}
-          <DocumentSummary documentId={documentId} />
+    setShowWritingAssistant(false);
+    setSelectedText('');
+    toast.success('Text improved!');
+  };
 
-          {/* Editor */}
-          <div className="border rounded-lg bg-white shadow-sm overflow-hidden">
-            <EditorToolbar editor={editor} />
-            <div className="tiptap-editor">
-              <EditorContent editor={editor} />
-            </div>
-          </div>
-        </div>
-
-        {/* AI Insights Panel */}
-        <AIInsightsPanel documentId={documentId} />
-      </div>
-    </DashboardLayout>
-  </ProtectedRoute>
-);
-}
-
-  // Show loading while editor initializes
-  if (!editor) {
+  if (!document || !editor) {
     return (
       <ProtectedRoute>
         <DashboardLayout>
-          <div className="flex items-center justify-center h-64">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+          <div className="flex h-[calc(100vh-8rem)]">
+            <div className="flex-1 space-y-4 overflow-y-auto pr-4">
+              <EditorSkeleton />
+            </div>
           </div>
         </DashboardLayout>
       </ProtectedRoute>
@@ -177,92 +173,123 @@ return (
   return (
     <ProtectedRoute>
       <DashboardLayout>
-        <div className="space-y-0">
-          {/* Editor Header */}
-          <div className="flex items-center justify-between border-b pb-4 mb-4">
-            <div className="flex items-center gap-4 flex-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => router.push(`/workspaces/${document.workspaceId}`)}
-              >
-                <ArrowLeft className="w-4 h-4" />
-              </Button>
+        <div className="flex h-[calc(100vh-8rem)]">
+          {/* Main Editor Area */}
+          <div className="flex-1 space-y-4 overflow-y-auto pr-4">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b pb-4">
+              <div className="flex items-center gap-4 flex-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => router.push(`/workspaces/${document.workspaceId}`)}
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                </Button>
 
-              <Input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                className="text-xl font-semibold border-none focus:ring-0 max-w-md"
-                placeholder="Untitled Document"
-              />
+                <Input
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  className="text-xl font-semibold border-none focus:ring-0 max-w-md"
+                  placeholder="Untitled Document"
+                />
 
-              {lastSaved && (
-                <span className="text-sm text-gray-500">
-                  Saved {lastSaved.toLocaleTimeString()}
-                </span>
-              )}
-            </div>
-
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <Users className="w-4 h-4 text-gray-600" />
-                <span className="text-sm text-gray-600">
-                  {users.length} online
-                </span>
-                {connected ? (
-                  <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-                ) : (
-                  <span className="w-2 h-2 bg-red-500 rounded-full"></span>
+                {lastSaved && (
+                  <span className="text-sm text-gray-500">
+                    Saved {lastSaved.toLocaleTimeString()}
+                  </span>
                 )}
               </div>
 
               <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <Users className="w-4 h-4 text-gray-600" />
+                  <span className="text-sm text-gray-600">
+                    {users.length} online
+                  </span>
+                  {connected ? (
+                    <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                  ) : (
+                    <span className="w-2 h-2 bg-red-500 rounded-full"></span>
+                  )}
+                </div>
+
                 <PresenceAvatars users={users} />
+                
+              
+                {selectedText && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowWritingAssistant(true)}
+                    className="bg-purple-50 hover:bg-purple-100 border-purple-200"
+                  >
+                    <Wand2 className="w-4 h-4 mr-2 text-purple-600" />
+                    Improve with AI
+                  </Button>
+                )}
+
                 <Button onClick={handleManualSave} disabled={saving}>
                   <Save className="w-4 h-4 mr-2" />
                   Save
                 </Button>
               </div>
             </div>
-          </div>
 
-          {/* Active Users List */}
-          {users.length > 0 && (
-            <div className="bg-blue-50 border border-blue-200 rounded p-3 mb-4">
-              <p className="text-sm font-medium text-blue-900 mb-2">
-                Currently editing:
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {users.map((user) => (
-                  <span
-                    key={user.socketId}
-                    className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs"
-                  >
-                    {user.username}
-                  </span>
-                ))}
+            {/* Active Users */}
+            {users.length > 0 && (
+              <div className="bg-blue-50 border border-blue-200 rounded p-3">
+                <p className="text-sm font-medium text-blue-900 mb-2">
+                  Currently editing:
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {users.map((user) => (
+                    <span
+                      key={user.socketId}
+                      className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs"
+                    >
+                      {user.username}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* AI Summary */}
+            <DocumentSummary documentId={documentId} />
+
+            {/* Editor */}
+            <div className="border rounded-lg bg-white shadow-sm overflow-hidden">
+              <EditorToolbar editor={editor} />
+              <div className="tiptap-editor">
+                <EditorContent editor={editor} />
               </div>
             </div>
-          )}
 
-          {/* Editor */}
-          <div className="border rounded-lg bg-white shadow-sm overflow-hidden">
-            <EditorToolbar editor={editor} />
-            <div className="tiptap-editor">
-              <EditorContent editor={editor} />
+            {/* Status Bar */}
+            <div className="flex items-center justify-between text-sm text-gray-600 border-t pt-4">
+              <div>Version {document.version}</div>
+              <div>
+                Last edited {new Date(document.updatedAt).toLocaleString()}
+              </div>
             </div>
           </div>
 
-          {/* Status Bar */}
-          <div className="flex items-center justify-between text-sm text-gray-600 border-t pt-4 mt-4">
-            <div>
-              Version {document.version}
-            </div>
-            <div>
-              Last edited {new Date(document.updatedAt).toLocaleString()}
-            </div>
-          </div>
+          {/* AI Insights Panel */}
+          <AIInsightsPanel documentId={documentId} />
         </div>
+
+        {/* ✨ NEW: Writing Assistant Modal */}
+        {showWritingAssistant && selectedText && (
+          <AIWritingAssistant
+            selectedText={selectedText}
+            onAccept={handleAcceptImprovedText}
+            onReject={() => {
+              setShowWritingAssistant(false);
+              setSelectedText('');
+            }}
+          />
+        )}
       </DashboardLayout>
     </ProtectedRoute>
   );
