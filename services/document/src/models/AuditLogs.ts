@@ -1,3 +1,4 @@
+// services/document/src/models/AuditLogs.ts
 import mongoose, { Schema, Document as MongooseDocument } from 'mongoose';
 
 export interface IAuditLog extends MongooseDocument {
@@ -38,14 +39,23 @@ const auditLogSchema = new Schema<IAuditLog>({
     type: String,
     required: true,
     enum: [
+      // Document actions
       'document.created',
       'document.updated',
       'document.deleted',
+      
+      // Workflow actions
+      'workflow.created',              // ✅ Added this
       'workflow.state_changed',
       'workflow.approval_requested',
       'workflow.approved',
       'workflow.rejected',
       'workflow.changes_requested',
+      
+      // Additional workflow actions
+      'workflow.published',            // ✅ Added this
+      'workflow.archived',             // ✅ Added this
+      'workflow.reverted',             // ✅ Added this
     ],
   },
   details: {

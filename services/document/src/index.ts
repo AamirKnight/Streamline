@@ -16,6 +16,7 @@ import { apiLimiter } from './middleware/rateLimitter';
 import logger from './utils/logger';
 import { config } from './config';
 import aiPublisher from './utils/aiPublisher';
+import workflowRoutes from './routes/workflowRoutes';
 
 dotenv.config();
 
@@ -63,6 +64,7 @@ app.get('/health', (req, res) => {
 });
 
 app.use('/documents', documentRoutes);
+app.use('/workflows', workflowRoutes); 
 app.use('/cache', cacheRoutes);
 
 // ---------------------------
