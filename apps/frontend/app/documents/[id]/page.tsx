@@ -21,6 +21,7 @@ import { EditorSkeleton } from '@/components/ui/skeleton';
 import { AIInsightsPanel } from '@/components/ai/AIinsightPannel';
 import { DocumentSummary } from '@/components/ai/DocummentSummary';
 import { AIWritingAssistant } from '@/components/ai/AIWritingAssistant';
+import { WorkflowPanel } from '@/components/workflow/WorkFlowPannel';
 
 export default function DocumentEditorPage() {
   const params = useParams();
@@ -33,13 +34,14 @@ export default function DocumentEditorPage() {
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [initialContent, setInitialContent] = useState<string>('');
   
-  // ✨ NEW: Writing Assistant State
+  // Writing Assistant State
   const [selectedText, setSelectedText] = useState('');
   const [showWritingAssistant, setShowWritingAssistant] = useState(false);
 
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const { connected, users, emitChange, onDocumentChange } = useSocket(documentId);
+  const { user } = useAuth();
 
   useEffect(() => {
     const loadDocument = async () => {
@@ -84,7 +86,7 @@ export default function DocumentEditorPage() {
         handleAutoSave(html);
       }, 2000);
     },
-    // ✨ NEW: Capture text selection
+    // Capture text selection
     onSelectionUpdate: ({ editor }) => {
       const { from, to } = editor.state.selection;
       const text = editor.state.doc.textBetween(from, to, ' ');
@@ -140,7 +142,7 @@ export default function DocumentEditorPage() {
     }
   };
 
-  // ✨ NEW: Handle improved text from AI
+  // Handle improved text from AI
   const handleAcceptImprovedText = (improvedText: string) => {
     if (!editor) return;
 
@@ -173,7 +175,7 @@ export default function DocumentEditorPage() {
   return (
     <ProtectedRoute>
       <DashboardLayout>
-        <div className="flex h-[calc(100vh-8rem)]">
+        <div className="flex h-[calc(100vh-8rem)] gap-4">
           {/* Main Editor Area */}
           <div className="flex-1 space-y-4 overflow-y-auto pr-4">
             {/* Header */}
@@ -216,7 +218,6 @@ export default function DocumentEditorPage() {
 
                 <PresenceAvatars users={users} />
                 
-              
                 {selectedText && (
                   <Button
                     variant="outline"
@@ -275,11 +276,19 @@ export default function DocumentEditorPage() {
             </div>
           </div>
 
-          {/* AI Insights Panel */}
-          <AIInsightsPanel documentId={documentId} />
+          {/* Right Sidebar with Workflow & AI Insights */}
+          <div className="w-80 space-y-4 overflow-y-auto">
+            {/* Workflow Panel */}
+            {user && (
+              <WorkflowPanel documentId={documentId} userId={user.id} />
+            )}
+            
+            {/* AI Insights Panel */}
+            <AIInsightsPanel documentId={documentId} />
+          </div>
         </div>
 
-        {/* ✨ NEW: Writing Assistant Modal */}
+        {/* Writing Assistant Modal */}
         {showWritingAssistant && selectedText && (
           <AIWritingAssistant
             selectedText={selectedText}
