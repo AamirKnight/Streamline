@@ -3,9 +3,9 @@
 
 import { useState, useEffect } from 'react';
 import { workflowService, Workflow, WorkflowState } from '@/lib/workflow';
+import { workspaceService } from '@/lib/workspace';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { WorkflowStatus } from './WorkflowStatus';
 import { WorkflowTimeline } from './WorkflowTimeline';
@@ -14,10 +14,10 @@ import { toast } from 'sonner';
 import { 
   Send, 
   CheckCircle, 
-  AlertCircle,
   Shield,
   Plus,
-  X
+  X,
+  UserCheck
 } from 'lucide-react';
 
 interface WorkflowPanelProps {
@@ -30,23 +30,34 @@ export function WorkflowPanel({ documentId, userId }: WorkflowPanelProps) {
   const [loading, setLoading] = useState(true);
   const [showApprovalForm, setShowApprovalForm] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [approverEmail, setApproverEmail] = useState('');
-  const [approverIds, setApproverIds] = useState<number[]>([]);
+  
+  // 🆕 NEW: Workspace members state
+  const [workspaceMembers, setWorkspaceMembers] = useState<any[]>([]);
+  const [selectedApprovers, setSelectedApprovers] = useState<number[]>([]);
+  const [workspaceId, setWorkspaceId] = useState<number | null>(null);
 
   useEffect(() => {
     loadWorkflow();
   }, [documentId]);
 
+  // 🆕 NEW: Load workspace members when creating workflow
+  useEffect(() => {
+    if (showCreateForm && workspaceId) {
+      loadWorkspaceMembers();
+    }
+  }, [showCreateForm, workspaceId]);
+
   const loadWorkflow = async () => {
     try {
       const data = await workflowService.getWorkflow(documentId);
       setWorkflow(data);
+      setWorkspaceId(data.workspaceId);
       setShowCreateForm(false);
     } catch (error: any) {
       if (error.response?.status === 404) {
-        // Workflow doesn't exist yet - show create form
         setWorkflow(null);
-        setShowCreateForm(false);
+        // Get workspace ID from document
+        fetchDocumentWorkspace();
       } else {
         toast.error('Failed to load workflow');
       }
@@ -55,34 +66,58 @@ export function WorkflowPanel({ documentId, userId }: WorkflowPanelProps) {
     }
   };
 
+  // 🆕 NEW: Fetch document to get workspace ID
+  const fetchDocumentWorkspace = async () => {
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_DOCUMENT_URL}/documents/${documentId}`, {
+        headers: { 
+          Authorization: `Bearer ${document.cookie.split('accessToken=')[1]?.split(';')[0]}` 
+        }
+      });
+      const data = await response.json();
+      setWorkspaceId(data.document.workspaceId);
+    } catch (error) {
+      console.error('Failed to fetch document workspace:', error);
+    }
+  };
+
+  // 🆕 NEW: Load workspace members
+  const loadWorkspaceMembers = async () => {
+    if (!workspaceId) return;
+    
+    try {
+      const members = await workspaceService.getMembers(workspaceId);
+      // Filter out current user (can't approve own document)
+      const otherMembers = members.filter((m: any) => m.userId !== userId);
+      setWorkspaceMembers(otherMembers);
+    } catch (error) {
+      toast.error('Failed to load workspace members');
+    }
+  };
+
+  // 🆕 NEW: Toggle approver selection
+  const toggleApprover = (memberId: number) => {
+    setSelectedApprovers(prev => 
+      prev.includes(memberId)
+        ? prev.filter(id => id !== memberId)
+        : [...prev, memberId]
+    );
+  };
+
   const handleCreateWorkflow = async () => {
-    if (approverIds.length === 0) {
-      toast.error('Please add at least one approver');
+    if (selectedApprovers.length === 0) {
+      toast.error('Please select at least one approver');
       return;
     }
 
     try {
-      await workflowService.createWorkflow(documentId, approverIds);
+      await workflowService.createWorkflow(documentId, selectedApprovers);
       toast.success('Workflow created successfully');
       loadWorkflow();
+      setSelectedApprovers([]);
     } catch (error: any) {
       toast.error(error.response?.data?.error || 'Failed to create workflow');
     }
-  };
-
-  const handleAddApprover = () => {
-    // In a real app, you'd lookup the user ID by email
-    // For now, just using a placeholder
-    const newId = Math.floor(Math.random() * 1000);
-    if (approverEmail && !approverIds.includes(newId)) {
-      setApproverIds([...approverIds, newId]);
-      setApproverEmail('');
-      toast.success('Approver added');
-    }
-  };
-
-  const handleRemoveApprover = (id: number) => {
-    setApproverIds(approverIds.filter(i => i !== id));
   };
 
   const handleSubmitForReview = async () => {
@@ -159,38 +194,53 @@ export function WorkflowPanel({ documentId, userId }: WorkflowPanelProps) {
           ) : (
             <div className="space-y-4">
               <div>
-                <Label>Add Approvers</Label>
-                <div className="flex gap-2 mt-2">
-                  <Input
-                    type="email"
-                    placeholder="Enter user ID or email"
-                    value={approverEmail}
-                    onChange={(e) => setApproverEmail(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && handleAddApprover()}
-                  />
-                  <Button onClick={handleAddApprover} size="sm">
-                    Add
-                  </Button>
-                </div>
-              </div>
-
-              {approverIds.length > 0 && (
-                <div>
-                  <Label>Required Approvers ({approverIds.length})</Label>
-                  <div className="space-y-2 mt-2">
-                    {approverIds.map((id) => (
-                      <div key={id} className="flex items-center justify-between bg-gray-50 p-2 rounded">
-                        <span className="text-sm">User #{id}</span>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleRemoveApprover(id)}
-                        >
-                          <X className="w-4 h-4" />
-                        </Button>
+                <Label className="flex items-center gap-2 mb-3">
+                  <UserCheck className="w-4 h-4" />
+                  Select Approvers (Required)
+                </Label>
+                
+                {workspaceMembers.length === 0 ? (
+                  <p className="text-sm text-gray-600 py-4 text-center border rounded">
+                    No other members in this workspace. 
+                    <br />
+                    Invite team members first.
+                  </p>
+                ) : (
+                  <div className="space-y-2 max-h-64 overflow-y-auto border rounded p-2">
+                    {workspaceMembers.map((member) => (
+                      <div
+                        key={member.userId}
+                        onClick={() => toggleApprover(member.userId)}
+                        className={`
+                          flex items-center justify-between p-3 rounded cursor-pointer transition
+                          ${selectedApprovers.includes(member.userId)
+                            ? 'bg-blue-50 border-2 border-blue-500'
+                            : 'bg-gray-50 border border-gray-200 hover:bg-gray-100'
+                          }
+                        `}
+                      >
+                        <div>
+                          <p className="font-medium text-sm">
+                            {member.user?.username || `User #${member.userId}`}
+                          </p>
+                          <p className="text-xs text-gray-600">
+                            {member.role}
+                          </p>
+                        </div>
+                        {selectedApprovers.includes(member.userId) && (
+                          <CheckCircle className="w-5 h-5 text-blue-600" />
+                        )}
                       </div>
                     ))}
                   </div>
+                )}
+              </div>
+
+              {selectedApprovers.length > 0 && (
+                <div className="bg-blue-50 border border-blue-200 rounded p-3">
+                  <p className="text-sm text-blue-900">
+                    ✓ {selectedApprovers.length} approver{selectedApprovers.length > 1 ? 's' : ''} selected
+                  </p>
                 </div>
               )}
 
@@ -199,8 +249,7 @@ export function WorkflowPanel({ documentId, userId }: WorkflowPanelProps) {
                   variant="outline"
                   onClick={() => {
                     setShowCreateForm(false);
-                    setApproverIds([]);
-                    setApproverEmail('');
+                    setSelectedApprovers([]);
                   }}
                   className="flex-1"
                 >
@@ -208,7 +257,7 @@ export function WorkflowPanel({ documentId, userId }: WorkflowPanelProps) {
                 </Button>
                 <Button
                   onClick={handleCreateWorkflow}
-                  disabled={approverIds.length === 0}
+                  disabled={selectedApprovers.length === 0}
                   className="flex-1"
                 >
                   Create Workflow
@@ -271,15 +320,13 @@ export function WorkflowPanel({ documentId, userId }: WorkflowPanelProps) {
             <p className="text-sm text-gray-700 font-medium">
               You are required to review this document
             </p>
-            <div className="flex gap-2">
-              <Button
-                onClick={() => setShowApprovalForm(true)}
-                className="flex-1 bg-green-600 hover:bg-green-700"
-              >
-                <CheckCircle className="w-4 h-4 mr-2" />
-                Review
-              </Button>
-            </div>
+            <Button
+              onClick={() => setShowApprovalForm(true)}
+              className="w-full bg-green-600 hover:bg-green-700"
+            >
+              <CheckCircle className="w-4 h-4 mr-2" />
+              Review Now
+            </Button>
           </div>
         )}
 
