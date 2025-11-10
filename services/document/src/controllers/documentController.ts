@@ -24,18 +24,22 @@ export const createDocument = async (req: Request, res: Response) => {
       return res.status(400).json({ error: ERROR_MESSAGES.WORKSPACE_ID_REQUIRED });
     }
 
+    // ✅ FIX: Use a space character as default instead of empty string
+    const documentContent = content || ' ';
+
     const document = await Document.create({
       title,
-      content: content || '',
+      content: documentContent,
       workspaceId,
       createdBy: userId,
       lastEditedBy: userId,
       version: 1,
     });
 
+    // ✅ FIX: Create version with the same non-empty content
     await DocumentVersion.create({
       documentId: document._id.toString(),
-      content: content || '',
+      content: documentContent,
       versionNumber: 1,
       createdBy: userId,
     });
@@ -207,12 +211,15 @@ export const updateDocument = async (req: Request, res: Response) => {
 
     if (title) document.title = title;
     if (content !== undefined) {
+      // ✅ FIX: Ensure content is never empty for version history
+      const versionContent = content.trim() === '' ? ' ' : content;
+      
       document.content = content;
       document.version += 1;
 
       await DocumentVersion.create({
         documentId: document._id.toString(),
-        content,
+        content: versionContent,
         versionNumber: document.version,
         createdBy: userId!,
       });
