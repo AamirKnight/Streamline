@@ -16,40 +16,43 @@ A modern, real-time collaborative document editing platform built with microserv
 - ✅ **Secure** - JWT authentication, rate limiting, input validation
 - ✅ **Fast** - Redis caching, optimized queries, CDN-ready
 
-## 🏗️ Architecture
+## Architecture
+
 ```
-Frontend (Next.js 14)
-    ↓
-Auth Service (3001) → MySQL
-    ↓
-Workspace Service (3002) → MySQL
-    ↓
-Document Service (3003) → MongoDB + Socket.io + Redis
+┌─────────────┐
+│   Next.js   │
+│  Frontend   │
+└──────┬──────┘
+       │
+       ├──────┬──────────┬──────────┬──────────┐
+       │      │          │          │          │
+   ┌───▼──┐ ┌▼────────┐ ┌▼───────┐ ┌▼──────┐  ┌▼──────┐
+   │ Auth │ │Workspace│ │Document│ │  AI   │  │ File  │
+   └───┬──┘ └┬────────┘ └┬───────┘ └┬──────┘  └───────┘
+       │     │           │          │
+   ┌───▼─────▼───────────▼──────────▼──────────┐
+   │  MySQL  │ MongoDB │ PostgreSQL │  Redis   │
+   └─────────┴─────────┴────────────┴──────────┘
 ```
 
-### Tech Stack
+## Tech Stack
+### Backend
+- **Auth Service**: Node.js + Express + MySQL + JWT
+- **Workspace Service**: Node.js + Express + MySQL + Redis
+- **Document Service**: Node.js + MongoDB + Socket.io
+- **AI Service**: Node.js + PostgreSQL (pgvector) + Gemini + HuggingFace
 
-**Frontend:**
-- Next.js 14 (App Router)
-- React 18
-- TypeScript
-- Tailwind CSS
-- shadcn/ui
-- TipTap (Rich Text Editor)
-- Socket.io Client
+### Frontend
+- **Framework**: Next.js 15 (App Router)
+- **Editor**: TipTap
+- **Styling**: Tailwind CSS + shadcn/ui
+- **Real-time**: Socket.io-client
 
-**Backend:**
-- Node.js + Express
-- TypeScript
-- MySQL (Users, Workspaces)
-- MongoDB (Documents)
-- Redis (Caching, Rate Limiting, Socket.io Adapter)
-- Socket.io (Real-Time)
-- RabbitMQ (Message Queue - Planned)
-
-**DevOps:**
-- Docker & Docker Compose
-- GitHub Actions (CI/CD - Planned)
+### Infrastructure
+- **Databases**: MySQL, MongoDB, PostgreSQL (pgvector)
+- **Cache**: Redis
+- **Message Queue**: RabbitMQ
+- **AI**: Google Gemini + HuggingFace
 
 ## 📦 Installation
 

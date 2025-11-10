@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  auth-service:
+    image: streamline/auth-service:latest
+    restart: always
+    environment:
+      - NODE_ENV=production
+      - DB_HOST=${DB_HOST}
+      - JWT_SECRET=${JWT_SECRET}
+    ports:
+      - "3001:3001"
+
+  workspace-service:
+    image: streamline/workspace-service:latest
+    restart: always
+    environment:
+      - NODE_ENV=production
+    ports:
+      - "3002:3002"
+
+  document-service:
+    image: streamline/document-service:latest
+    restart: always
+    environment:
+      - NODE_ENV=production
+    ports:
+      - "3003:3003"
+
+  ai-service:
+    image: streamline/ai-service:latest
+    restart: always
+    environment:
+      - NODE_ENV=production
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - HF_TOKEN=${HF_TOKEN}
+    ports:
+      - "3004:3004"
+
+  frontend:
+    image: streamline/frontend:latest
+    restart: always
+    environment:
+      - NODE_ENV=production
+    ports:
+      - "3000:3000"
+
+  nginx:
+    image: nginx:alpine
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./ssl:/etc/nginx/ssl
