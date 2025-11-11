@@ -1,13 +1,20 @@
+// services/auth/src/middleware/rateLimitter.ts
 import { Request, Response, NextFunction } from 'express';
 import { createClient } from 'redis';
 
+// Use REDIS_URL from environment
 const redisClient = createClient({
-  url: `redis://${process.env.REDIS_HOST || 'localhost'}:${process.env.REDIS_PORT || '6379'}`,
+  url: process.env.REDIS_URL || 'redis://localhost:6379',
 });
 
 redisClient.on('error', (err) => console.error('Redis Client Error', err));
 
-redisClient.connect().catch(console.error);
+// Only connect if Redis URL is available
+if (process.env.REDIS_URL) {
+  redisClient.connect().catch(console.error);
+} else {
+  console.warn('⚠️  Redis not configured - rate limiting disabled');
+}
 
 const RATE_LIMIT_WINDOW = 60; // 1 minute
 const MAX_REQUESTS = 5; // Max 5 login attempts per minute
@@ -17,6 +24,15 @@ export const loginRateLimiter = async (
   res: Response,
   next: NextFunction
 ) => {
+  if (!process.env.REDIS_URL) {
+    return next();
+  }
+  // Skip if Redis not connected
+  if (!redisClient.isReady) {
+    console.warn('Rate limiter: Redis not connected, skipping');
+    return next();
+  }
+
   try {
     const key = `login:${req.ip}`;
     const count = await redisClient.incr(key);

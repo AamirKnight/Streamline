@@ -16,15 +16,12 @@ import { toast } from "sonner";
 import { LoadingSpinner } from '../ui/loading';
 import { motion } from 'framer-motion';
 import { Mail, Lock, Eye, EyeOff } from 'lucide-react';
+
 const loginSchema = z.object({
   email: z.string().email('Invalid email address'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
-  rememberMe: z.preprocess(
-    val => val ?? true, // ensure default
-    z.boolean()
-  ),
+  rememberMe: z.boolean().default(true),
 });
-
 
 type LoginFormData = z.infer<typeof loginSchema>;
 

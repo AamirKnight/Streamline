@@ -1,3 +1,4 @@
+// services/workspace/src/controllers/workspaceController.ts
 import { Request, Response } from 'express';
 import Workspace from '../models/Workspace';
 import WorkspaceMember, { MemberRole } from '../models/WorkspaceMember';
@@ -17,8 +18,11 @@ export const getWorkspaces = async (req: Request, res: Response) => {
     const cachedWorkspaces = await cache.get<any[]>(cacheKey);
 
     if (cachedWorkspaces) {
+      console.log('✅ Cache HIT for workspaces:', userId);
       return res.json({ workspaces: cachedWorkspaces });
     }
+
+    console.log('❌ Cache MISS for workspaces:', userId);
 
     // Cache miss - get from database
     const memberships = await WorkspaceMember.findAll({
@@ -38,12 +42,55 @@ export const getWorkspaces = async (req: Request, res: Response) => {
       };
     });
 
-    // Store in cache for 5 minutes
-    await cache.set(cacheKey, workspacesWithRoles, 300);
+    // Store in cache for 1 minute only (reduced from 5 minutes)
+    await cache.set(cacheKey, workspacesWithRoles, 60);
 
     res.json({ workspaces: workspacesWithRoles });
   } catch (error: any) {
     console.error('Get workspaces error:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+export const createWorkspace = async (req: Request, res: Response) => {
+  try {
+    const { name, description } = req.body;
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    // Validate input
+    if (!name || name.trim().length === 0) {
+      return res.status(400).json({ error: 'Workspace name is required' });
+    }
+
+    // Create workspace
+    const workspace = await Workspace.create({
+      name,
+      description,
+      ownerId: userId,
+    });
+
+    // Add creator as admin member
+    await WorkspaceMember.create({
+      workspaceId: workspace.id,
+      userId,
+      role: MemberRole.ADMIN,
+    });
+
+    // 🔥 FIX: Immediately invalidate user's workspace list cache
+    await cache.del(`workspaces:user:${userId}`);
+    
+    console.log('✅ Invalidated workspace cache for user:', userId);
+
+    res.status(201).json({
+      message: 'Workspace created successfully',
+      workspace,
+    });
+  } catch (error: any) {
+    console.error('Create workspace error:', error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -58,8 +105,11 @@ export const getWorkspaceById = async (req: Request, res: Response) => {
     const cachedWorkspace = await cache.get(cacheKey);
 
     if (cachedWorkspace) {
+      console.log('✅ Cache HIT for workspace:', workspaceId);
       return res.json({ workspace: cachedWorkspace });
     }
+
+    console.log('❌ Cache MISS for workspace:', workspaceId);
 
     // Cache miss - get from database
     const workspace = await Workspace.findByPk(workspaceId);
@@ -77,8 +127,8 @@ export const getWorkspaceById = async (req: Request, res: Response) => {
       role: membership?.role,
     };
 
-    // Store in cache for 10 minutes
-    await cache.set(cacheKey, workspaceData, 600);
+    // Store in cache for 2 minutes (reduced from 10 minutes)
+    await cache.set(cacheKey, workspaceData, 120);
 
     res.json({ workspace: workspaceData });
   } catch (error: any) {
@@ -103,7 +153,7 @@ export const updateWorkspace = async (req: Request, res: Response) => {
 
     await workspace.save();
 
-    // Invalidate caches
+    // 🔥 FIX: Invalidate caches immediately
     await cache.del(`workspace:${workspaceId}`);
     
     // Invalidate all user workspace lists that include this workspace
@@ -111,6 +161,8 @@ export const updateWorkspace = async (req: Request, res: Response) => {
     for (const member of members) {
       await cache.del(`workspaces:user:${member.userId}`);
     }
+
+    console.log('✅ Invalidated workspace caches after update');
 
     res.json({
       message: 'Workspace updated successfully',
@@ -143,59 +195,19 @@ export const deleteWorkspace = async (req: Request, res: Response) => {
     // Delete workspace
     await workspace.destroy();
 
-    // Invalidate caches
+    // 🔥 FIX: Invalidate caches
     await cache.del(`workspace:${workspaceId}`);
     for (const member of members) {
       await cache.del(`workspaces:user:${member.userId}`);
     }
+
+    console.log('✅ Invalidated workspace caches after deletion');
 
     res.json({ message: 'Workspace deleted successfully' });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 };
-
-
-
-export const createWorkspace = async (req: Request, res: Response) => {
-  try {
-    const { name, description } = req.body;
-    const userId = req.user?.id;
-
-    if (!userId) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    // Validate input
-    if (!name || name.trim().length === 0) {
-      return res.status(400).json({ error: 'Workspace name is required' });
-    }
-
-    // Create workspace
-    const workspace = await Workspace.create({
-      name,
-      description,
-      ownerId: userId,
-    });
-
-    // Add creator as admin member
-    await WorkspaceMember.create({
-      workspaceId: workspace.id,
-      userId,
-      role: MemberRole.ADMIN,
-    });
-
-    res.status(201).json({
-      message: 'Workspace created successfully',
-      workspace,
-    });
-  } catch (error: any) {
-    console.error('Create workspace error:', error);
-    res.status(500).json({ error: error.message });
-  }
-};
-
-
 
 export const getWorkspaceMembers = async (req: Request, res: Response) => {
   try {
@@ -272,6 +284,11 @@ export const removeMember = async (req: Request, res: Response) => {
     }
 
     await membership.destroy();
+
+    // 🔥 FIX: Invalidate cache for removed member
+    await cache.del(`workspaces:user:${memberIdToRemove}`);
+
+    console.log('✅ Invalidated cache for removed member');
 
     res.json({ message: 'Member removed successfully' });
   } catch (error: any) {
