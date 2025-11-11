@@ -8,6 +8,8 @@ export const ERROR_MESSAGES = {
   MEMBER_NOT_FOUND: 'Member not found',
   CANNOT_REMOVE_SELF: 'Cannot remove yourself from workspace',
   EMAIL_REQUIRED: 'Email is required',
+    PASSWORD_TOO_SHORT: 'Password must be at least 8 characters long',
+  INVALID_EMAIL: 'Invalid email format',
 };
 
 export const SUCCESS_MESSAGES = {
