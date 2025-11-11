@@ -6,19 +6,25 @@ const cacheClient = createClient({ url: redisUrl });
 
 cacheClient.on('error', (err) => logger.error('Redis Cache Error:', err));
 
+let isRedisConnected = false;
+
 export const connectCache = async () => {
   try {
     await cacheClient.connect();
+    isRedisConnected = true;
     logger.info('✅ Redis cache connected');
   } catch (error) {
-    logger.error('❌ Redis cache connection error:', error);
+    logger.warn('⚠️ Redis cache connection failed, running without cache:', error);
+    isRedisConnected = false;
   }
 };
 
-const DEFAULT_TTL = 3600; // 1 hour
+const DEFAULT_TTL = 3600;
 
 export const cache = {
   async get<T>(key: string): Promise<T | null> {
+    if (!isRedisConnected) return null;
+    
     try {
       const data = await cacheClient.get(key);
       if (data) {
@@ -34,6 +40,8 @@ export const cache = {
   },
 
   async set(key: string, value: any, ttl: number = DEFAULT_TTL): Promise<void> {
+    if (!isRedisConnected) return;
+    
     try {
       await cacheClient.setEx(key, ttl, JSON.stringify(value));
       logger.debug('Cache SET', { key, ttl });
@@ -43,6 +51,8 @@ export const cache = {
   },
 
   async del(key: string): Promise<void> {
+    if (!isRedisConnected) return;
+    
     try {
       await cacheClient.del(key);
       logger.debug('Cache DEL', { key });
@@ -52,6 +62,8 @@ export const cache = {
   },
 
   async delPattern(pattern: string): Promise<void> {
+    if (!isRedisConnected) return;
+    
     try {
       const keys = await cacheClient.keys(pattern);
       if (keys.length > 0) {
