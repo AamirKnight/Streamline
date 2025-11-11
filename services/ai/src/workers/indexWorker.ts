@@ -9,12 +9,15 @@ class IndexWorker {
 
   async connect(): Promise<void> {
     try {
-      // Fix: Properly type the connection
-      this.connection = await amqp.connect(config.rabbitmq.url) as Connection;
+      // Properly type the connection
+      const connection = await amqp.connect(config.rabbitmq.url);
+      this.connection = connection;
 
-      this.channel = await this.connection.createChannel();
+      // Properly create the channel
+      const channel = await connection.createChannel();
+      this.channel = channel;
 
-      await this.channel.assertQueue('document.index', { durable: true });
+      await channel.assertQueue('document.index', { durable: true });
 
       logger.info('✅ RabbitMQ connected for AI indexing');
 
@@ -26,10 +29,9 @@ class IndexWorker {
   }
 
   private startConsuming(): void {
-    if (!this.channel) return;
-
-    // Store channel in a const to satisfy TypeScript null checks
+    // ✅ Ensure channel is not null
     const channel = this.channel;
+    if (!channel) return;
 
     channel.consume('document.index', async (msg: ConsumeMessage | null) => {
       if (!msg) return;
@@ -46,12 +48,10 @@ class IndexWorker {
           await vectorService.deleteDocumentEmbeddings(documentId);
         }
 
-        // Use the const channel instead of this.channel
         channel.ack(msg);
         logger.info('Document indexed successfully', { documentId });
       } catch (error) {
         logger.error('Index job failed:', error);
-        // Use the const channel instead of this.channel
         channel.nack(msg, false, true);
       }
     });
@@ -67,7 +67,8 @@ class IndexWorker {
       throw new Error('RabbitMQ channel not initialized');
     }
 
-    await this.channel.sendToQueue(
+    // ✅ await not required for sendToQueue (it's synchronous)
+    this.channel.sendToQueue(
       'document.index',
       Buffer.from(JSON.stringify(data)),
       { persistent: true }
