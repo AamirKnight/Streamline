@@ -10,14 +10,12 @@ class IndexWorker {
   async connect(): Promise<void> {
     try {
       // Create connection
-      const conn = await amqp.connect(config.rabbitmq.url);
-      this.connection = conn;
+      this.connection = await amqp.connect(config.rabbitmq.url);
 
       // Create channel
-      const ch = await conn.createChannel();
-      this.channel = ch;
+      this.channel = await this.connection.createChannel();
 
-      await ch.assertQueue('document.index', { durable: true });
+      await this.channel.assertQueue('document.index', { durable: true });
 
       logger.info('✅ RabbitMQ connected for AI indexing');
 
