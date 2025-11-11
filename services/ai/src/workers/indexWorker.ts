@@ -1,4 +1,5 @@
-import amqp, { Connection, Channel, ConsumeMessage } from 'amqplib';
+import amqp from 'amqplib';
+import type { Connection, Channel, ConsumeMessage } from 'amqplib';
 import vectorService from '../services/vectorService';
 import logger from '../utils/logger';
 import { config } from '../config';
@@ -9,15 +10,13 @@ class IndexWorker {
 
   async connect(): Promise<void> {
     try {
-      // Properly type the connection
-      const connection = await amqp.connect(config.rabbitmq.url);
-      this.connection = connection;
+      // Create connection
+      this.connection = await amqp.connect(config.rabbitmq.url);
 
-      // Properly create the channel
-      const channel = await connection.createChannel();
-      this.channel = channel;
+      // Create channel
+      this.channel = await this.connection.createChannel();
 
-      await channel.assertQueue('document.index', { durable: true });
+      await this.channel.assertQueue('document.index', { durable: true });
 
       logger.info('✅ RabbitMQ connected for AI indexing');
 
@@ -29,9 +28,9 @@ class IndexWorker {
   }
 
   private startConsuming(): void {
-    // ✅ Ensure channel is not null
+    if (!this.channel) return;
+
     const channel = this.channel;
-    if (!channel) return;
 
     channel.consume('document.index', async (msg: ConsumeMessage | null) => {
       if (!msg) return;
@@ -67,7 +66,6 @@ class IndexWorker {
       throw new Error('RabbitMQ channel not initialized');
     }
 
-    // ✅ await not required for sendToQueue (it's synchronous)
     this.channel.sendToQueue(
       'document.index',
       Buffer.from(JSON.stringify(data)),
@@ -75,6 +73,16 @@ class IndexWorker {
     );
 
     logger.info('Index job queued', { documentId: data.documentId });
+  }
+
+  async close(): Promise<void> {
+    try {
+      await this.channel?.close();
+      await this.connection?.close();
+      logger.info('RabbitMQ connection closed');
+    } catch (error) {
+      logger.error('Error closing RabbitMQ connection:', error);
+    }
   }
 }
 
