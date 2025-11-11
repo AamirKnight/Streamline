@@ -12,7 +12,7 @@ class IndexWorker {
       // Create connection
       this.connection = await amqp.connect(config.rabbitmq.url);
 
-      // Create channel
+      // Create channel - assign to this.channel, not this.connection
       this.channel = await this.connection.createChannel();
 
       await this.channel.assertQueue('document.index', { durable: true });
