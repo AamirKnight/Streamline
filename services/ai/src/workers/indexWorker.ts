@@ -1,22 +1,23 @@
-import amqp from 'amqplib';
-import type { Connection, Channel, ConsumeMessage } from 'amqplib';
+import * as amqp from 'amqplib';
 import vectorService from '../services/vectorService';
 import logger from '../utils/logger';
 import { config } from '../config';
 
 class IndexWorker {
-  private connection: Connection | null = null;
-  private channel: Channel | null = null;
+  private connection: amqp.Connection | null = null;
+  private channel: amqp.Channel | null = null;
 
   async connect(): Promise<void> {
     try {
       // Create connection
-      this.connection = await amqp.connect(config.rabbitmq.url);
+      const conn = await amqp.connect(config.rabbitmq.url);
+      this.connection = conn;
 
       // Create channel
-      this.channel = await this.connection.createChannel();
+      const ch = await conn.createChannel();
+      this.channel = ch;
 
-      await this.channel.assertQueue('document.index', { durable: true });
+      await ch.assertQueue('document.index', { durable: true });
 
       logger.info('✅ RabbitMQ connected for AI indexing');
 
@@ -32,7 +33,7 @@ class IndexWorker {
 
     const channel = this.channel;
 
-    channel.consume('document.index', async (msg: ConsumeMessage | null) => {
+    channel.consume('document.index', async (msg: amqp.ConsumeMessage | null) => {
       if (!msg) return;
 
       try {
@@ -77,8 +78,12 @@ class IndexWorker {
 
   async close(): Promise<void> {
     try {
-      await this.channel?.close();
-      await this.connection?.close();
+      if (this.channel) {
+        await this.channel.close();
+      }
+      if (this.connection) {
+        await this.connection.close();
+      }
       logger.info('RabbitMQ connection closed');
     } catch (error) {
       logger.error('Error closing RabbitMQ connection:', error);
