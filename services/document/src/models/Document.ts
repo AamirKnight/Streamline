@@ -57,5 +57,5 @@ documentSchema.index({ title: 'text', content: 'text' }); // Already exists
 documentSchema.set('autoIndex', true);
 
 const Document = mongoose.model<IDocument>('Document', documentSchema);
-Document.createIndexes();
+
 export default Document;
