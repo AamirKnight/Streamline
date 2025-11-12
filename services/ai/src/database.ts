@@ -1,18 +1,19 @@
 import { Sequelize } from 'sequelize';
 import { config } from './config';
 
-const sequelize = new Sequelize(
-  config.postgres.database,
-  config.postgres.username,
-  config.postgres.password,
-  {
-    host: config.postgres.host,
-    port: config.postgres.port,
-    dialect: 'postgres',
-    logging: config.nodeEnv === 'development' ? console.log : false,
-  }
-);
+// Initialize Sequelize with connection string instead of individual credentials
+const sequelize = new Sequelize(config.postgres.connectionString, {
+  dialect: 'postgres',
+  logging: config.nodeEnv === 'development' ? console.log : false,
+  dialectOptions: {
+    ssl: {
+      require: true,              // Neon requires SSL
+      rejectUnauthorized: false,  // accept self-signed certs
+    },
+  },
+});
 
+// Verify connection
 sequelize
   .authenticate()
   .then(() => {
