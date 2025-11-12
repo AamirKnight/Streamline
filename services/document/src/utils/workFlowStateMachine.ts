@@ -1,4 +1,4 @@
-import { WorkflowState } from '../models/DocumentWorkFlow';
+import { WorkflowState } from '../models/DocumentWorkflow';
 
 export const VALID_TRANSITIONS: Record<WorkflowState, WorkflowState[]> = {
   [WorkflowState.DRAFT]: [WorkflowState.IN_REVIEW],

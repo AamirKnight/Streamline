@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import Document from '../models/Document';
-import DocumentWorkflow, { WorkflowState } from '../models/DocumentWorkFlow';
+import DocumentWorkflow, { WorkflowState } from '../models/DocumentWorkflow';
 import AuditLog from '../models/AuditLogs';
 import { WorkflowStateMachine } from '../utils/workFlowStateMachine';
 import { CryptoSigner } from '../utils/cryptoSigner';
