@@ -42,5 +42,5 @@ const DocumentVersion = mongoose.model<IDocumentVersion>(
 );
 // Add indexes
 
-DocumentVersion.createIndexes();
+
 export default DocumentVersion;
