@@ -1,4 +1,4 @@
-import amqp from 'amqplib';
+import * as amqp from 'amqplib';
 import vectorService from '../services/vectorService';
 import logger from '../utils/logger';
 import { config } from '../config';

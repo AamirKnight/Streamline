@@ -7,7 +7,7 @@
     "setup": "npm install && npm run setup:services",
     "setup:services": "npm install --workspace=./services/auth --workspace=./services/workspace --workspace=./services/document --workspace=./services/notification --workspace=./services/file && npm install --workspace=./apps/frontend",
     "dev": "docker-compose -f docker/docker-compose.dev.yml up",
-   "dev:all": "concurrently -n \"auth,workspace,document,ai,frontend\" -c \"blue,green,yellow,cyan,magenta\" \"npm run dev:auth\" \"npm run dev:workspace\" \"npm run dev:document\" \"npm run dev:ai\" \"npm run dev:frontend\"",
+    "dev:all": "concurrently -n \"auth,workspace,document,ai,frontend\" -c \"blue,green,yellow,cyan,magenta\" \"npm run dev:auth\" \"npm run dev:workspace\" \"npm run dev:document\" \"npm run dev:ai\" \"npm run dev:frontend\"",
     "dev:services": "concurrently -n \"auth,workspace,document\" -c \"blue,green,yellow\" \"npm run dev:auth\" \"npm run dev:workspace\" \"npm run dev:document\"",
     "dev:auth": "npm -w services/auth run dev",
     "dev:workspace": "npm -w services/workspace run dev",
@@ -23,7 +23,7 @@
     "shared/*"
   ],
   "devDependencies": {
-    "concurrently": "^8.2.0"
+    "concurrently": "^8.2.2"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",
