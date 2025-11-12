@@ -1,4 +1,4 @@
-import * as amqp from 'amqplib';
+import amqp from 'amqplib';
 import vectorService from '../services/vectorService';
 import logger from '../utils/logger';
 import { config } from '../config';
@@ -12,8 +12,13 @@ class IndexWorker {
       // Create connection
       this.connection = await amqp.connect(config.rabbitmq.url);
 
-      // Create channel - assign to this.channel, not this.connection
+      // Create channel with null check
       this.channel = await this.connection.createChannel();
+
+      // Ensure channel was created successfully
+      if (!this.channel) {
+        throw new Error('Failed to create RabbitMQ channel');
+      }
 
       await this.channel.assertQueue('document.index', { durable: true });
 
