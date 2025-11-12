@@ -5,7 +5,7 @@ import {
   transitionState,
   submitApproval,
   getPendingApprovals,
-} from '../controllers/workfLowController';
+} from '../controllers/workflowController';
 import { authenticate } from '../middleware/auth';
 import { strictLimiter } from '../middleware/rateLimitter';
 

@@ -5,7 +5,6 @@ import { ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants';
 import logger from '../utils/logger';
 import { Server } from 'socket.io';
 import { cache } from '../utils/cahce';
-import aiPublisher from '../utils/aiPublisher'
 
 export const createDocument = async (req: Request, res: Response) => {
   try {
@@ -44,14 +43,7 @@ export const createDocument = async (req: Request, res: Response) => {
       createdBy: userId,
     });
 
-    // Queue for AI indexing
-    await aiPublisher.publishForIndexing(
-      document._id.toString(),
-      document.workspaceId,
-      document.content,
-      'create'
-    );
-
+   
     logger.info('Document created', { documentId: document._id, userId });
 
     res.status(201).json({
@@ -100,13 +92,7 @@ export const deleteDocument = async (req: Request, res: Response) => {
       return res.status(404).json({ error: ERROR_MESSAGES.DOCUMENT_NOT_FOUND });
     }
 
-    // Queue for AI deletion
-    await aiPublisher.publishForIndexing(
-      documentId,
-      document.workspaceId,
-      '',
-      'delete'
-    );
+  
 
     await Document.findByIdAndDelete(documentId);
     await DocumentVersion.deleteMany({ documentId });
@@ -227,14 +213,6 @@ export const updateDocument = async (req: Request, res: Response) => {
 
     document.lastEditedBy = userId;
     await document.save();
-
-    // Queue for AI re-indexing
-    await aiPublisher.publishForIndexing(
-      document._id.toString(),
-      document.workspaceId,
-      document.content,
-      'update'
-    );
 
     await cache.del(`document:${documentId}`);
     await cache.delPattern(`documents:workspace:${document.workspaceId}*`);
