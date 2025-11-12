@@ -5,7 +5,7 @@ import dotenv from 'dotenv';
 import sequelize from './database';
 import { setupVectorExtension } from './models/DocumentEmbedding';
 import aiRoutes from './routes/aiRoutes';
-import indexWorker from './workers/indexWorker';
+
 import logger from './utils/logger';
 import { connectCache } from './utils/cache';
 import { config } from './config';
@@ -55,7 +55,7 @@ const init = async () => {
 
     await connectCache();
 
-    await indexWorker.connect();
+    // await indexWorker.connect();
 
     app.listen(config.port, () => {
       logger.info(`🚀 AI service running on port ${config.port}`);
