@@ -11,16 +11,24 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { toast } from "sonner";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { toast } from 'sonner';
 import { LoadingSpinner } from '../ui/loading';
 import { motion } from 'framer-motion';
 import { Mail, Lock, Eye, EyeOff } from 'lucide-react';
 
+// ✅ Schema: keep rememberMe strictly boolean
 const loginSchema = z.object({
   email: z.string().email('Invalid email address'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
-  rememberMe: z.boolean().default(true),
+  rememberMe: z.boolean(),
 });
 
 type LoginFormData = z.infer<typeof loginSchema>;
@@ -31,6 +39,7 @@ export function LoginForm() {
   const router = useRouter();
   const { login } = useAuth();
 
+  // ✅ Match schema exactly
   const {
     register,
     handleSubmit,
@@ -38,20 +47,17 @@ export function LoginForm() {
   } = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      rememberMe: true
-    }
+      rememberMe: true,
+    },
   });
 
-  const onSubmit = async (data: LoginFormData) => {
+  // ✅ Strongly typed submit handler
+  const onSubmit = async (data: LoginFormData): Promise<void> => {
     setLoading(true);
     try {
       await login(data.email, data.password, data.rememberMe);
       toast.success('Welcome back!');
-      
-      // Smooth transition to dashboard
-      setTimeout(() => {
-        router.push('/dashboard');
-      }, 300);
+      setTimeout(() => router.push('/dashboard'), 300);
     } catch (error: any) {
       toast.error(error.response?.data?.error || 'Login failed');
     } finally {
@@ -76,10 +82,10 @@ export function LoginForm() {
             <CardDescription>Sign in to your account</CardDescription>
           </motion.div>
         </CardHeader>
-        
+
         <form onSubmit={handleSubmit(onSubmit)}>
           <CardContent className="space-y-4">
-            <motion.div 
+            <motion.div
               className="space-y-2"
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
@@ -98,7 +104,7 @@ export function LoginForm() {
                 />
               </div>
               {errors.email && (
-                <motion.p 
+                <motion.p
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   className="text-sm text-red-500"
@@ -108,7 +114,7 @@ export function LoginForm() {
               )}
             </motion.div>
 
-            <motion.div 
+            <motion.div
               className="space-y-2"
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
@@ -130,15 +136,11 @@ export function LoginForm() {
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
                 >
-                  {showPassword ? (
-                    <EyeOff className="w-4 h-4" />
-                  ) : (
-                    <Eye className="w-4 h-4" />
-                  )}
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
               {errors.password && (
-                <motion.p 
+                <motion.p
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   className="text-sm text-red-500"
@@ -148,7 +150,7 @@ export function LoginForm() {
               )}
             </motion.div>
 
-            <motion.div 
+            <motion.div
               className="flex items-center justify-between"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -181,9 +183,9 @@ export function LoginForm() {
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
             >
-              <Button 
-                type="submit" 
-                className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 transition-all" 
+              <Button
+                type="submit"
+                className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 transition-all"
                 disabled={loading}
               >
                 {loading ? (
@@ -197,7 +199,7 @@ export function LoginForm() {
               </Button>
             </motion.div>
 
-            <motion.p 
+            <motion.p
               className="text-sm text-center text-gray-600"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}

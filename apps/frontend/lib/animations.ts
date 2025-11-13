@@ -165,12 +165,11 @@ export function useScrollAnimation(threshold = 0.1) {
   const ref = useRef(null);
   const isInView = useInView(ref, { 
     once: true, 
-    margin: `-${threshold * 100}% 0px` 
+    margin: `${-threshold * 100}% 0px 0px 0px` as any
   });
 
   return { ref, isInView };
 }
-
 /**
  * Hook for detecting mobile device
  */
