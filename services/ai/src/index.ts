@@ -15,12 +15,12 @@ dotenv.config();
 const app = express();
 
 app.use(helmet());
-app.use(
-  cors({
-    origin: config.frontendUrl,
-    credentials: true,
-  })
-);
+app.use(cors({
+  origin: 'https://streamline-frontend-hdryvwclb-videos-projects-8b956c87.vercel.app/', // Your actual frontend URL
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
 app.use(express.json({ limit: '10mb' }));
 
 app.get('/health', (req, res) => {
