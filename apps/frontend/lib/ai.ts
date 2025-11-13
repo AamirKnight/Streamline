@@ -1,97 +1,224 @@
-// apps/frontend/lib/api.ts
+// apps/frontend/lib/ai.ts (COMPLETE VERSION)
 import axios from 'axios';
 import Cookies from 'js-cookie';
-import { handleApiError } from './error-handler';
 
-// ✅ Use correct environment variable names
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-const WORKSPACE_URL = process.env.NEXT_PUBLIC_WORKSPACE_URL || 'http://localhost:3002';
-const DOCUMENT_URL = process.env.NEXT_PUBLIC_DOCUMENT_URL || 'http://localhost:3003';
+const AI_URL = process.env.NEXT_PUBLIC_AI_URL || 'http://localhost:3004';
 
-// Auth API
-export const api = axios.create({
-  baseURL: API_URL,
+export const aiApi = axios.create({
+  baseURL: AI_URL,
   headers: {
     'Content-Type': 'application/json',
   },
-  withCredentials: true,
 });
 
-// Workspace API
-export const workspaceApi = axios.create({
-  baseURL: WORKSPACE_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  withCredentials: true,
-});
-
-// Document API
-export const documentApi = axios.create({
-  baseURL: DOCUMENT_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  withCredentials: true,
-});
-
-// Add token interceptor to all APIs
-[api, workspaceApi, documentApi].forEach((instance) => {
-  instance.interceptors.request.use(
-    (config) => {
-      const token = Cookies.get('accessToken');
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-      }
-      return config;
-    },
-    (error) => {
-      return Promise.reject(error);
+// Add token interceptor
+aiApi.interceptors.request.use(
+  (config) => {
+    const token = Cookies.get('accessToken');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
     }
-  );
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
 
-  instance.interceptors.response.use(
-    (response) => response,
-    async (error) => {
-      const originalRequest = error.config;
+// ============================================
+// 📊 TYPE DEFINITIONS
+// ============================================
 
-      if (error.response?.status === 401 && !originalRequest._retry) {
-        originalRequest._retry = true;
+export interface SearchResult {
+  _id: string;
+  title: string;
+  content: string;
+  workspaceId: number;
+  maxSimilarity: number;
+  relevantChunks: Array<{
+    text: string;
+    chunkIndex: number;
+    similarity: number;
+  }>;
+}
 
-        try {
-          const { data } = await axios.post(
-            `${API_URL}/auth/refresh-token`,
-            {},
-            { withCredentials: true }
-          );
+export interface Summary {
+  documentId: string;
+  title: string;
+  summary: string;
+  keyPoints: string[];
+  topics: string[];
+  generatedAt: Date;
+}
 
-          Cookies.set('accessToken', data.accessToken);
-          originalRequest.headers.Authorization = `Bearer ${data.accessToken}`;
+export interface Insights {
+  documentId: string;
+  relatedDocuments: Array<{
+    documentId: string;
+    similarity: number;
+    snippet: string;
+  }>;
+  suggestedTopics: string[];
+  missingInfo: string[];
+  improvements: string[];
+  generatedAt: Date;
+}
 
-          return instance(originalRequest);
-        } catch (refreshError) {
-          Cookies.remove('accessToken');
-          window.location.href = '/login';
-          return Promise.reject(refreshError);
-        }
-      }
+export interface WritingImprovement {
+  original: string;
+  improved: string;
+  changes: string[];
+}
 
-      handleApiError(error);
-      return Promise.reject(error);
-    }
-  );
-});
+export interface InconsistencyReport {
+  documentId: string;
+  inconsistencies: Array<{
+    documentId: string;
+    documentTitle: string;
+    conflicts: string[];
+  }>;
+  foundIssues: boolean;
+}
 
-export default api;
+export interface ConflictResolution {
+  original: string;
+  versionA: string;
+  versionB: string;
+  merged: string;
+  explanation: string;
+}
 
-// Example .env.local file:
-/*
-# Railway Production URLs (remove /api suffix!)
-NEXT_PUBLIC_API_URL=https://auth-service-production-60bd.up.railway.app
-NEXT_PUBLIC_WORKSPACE_URL=https://workspace-service-production-xxxx.up.railway.app
-NEXT_PUBLIC_DOCUMENT_URL=https://document-service-production-xxxx.up.railway.app
-NEXT_PUBLIC_AI_URL=https://ai-service-production-xxxx.up.railway.app
+// ============================================
+// 🔍 SEMANTIC SEARCH (HuggingFace)
+// ============================================
 
-# Frontend URL (for CORS)
-NEXT_PUBLIC_FRONTEND_URL=https://your-frontend-app.vercel.app
-*/
+export const aiService = {
+  /**
+   * Semantic search using HuggingFace embeddings
+   */
+  async semanticSearch(
+    query: string, 
+    workspaceId: number, 
+    topK: number = 5
+  ): Promise<SearchResult[]> {
+    const response = await aiApi.post('/ai/search', { 
+      query, 
+      workspaceId, 
+      topK 
+    });
+    return response.data.results;
+  },
+
+  /**
+   * Index a document for semantic search
+   */
+  async indexDocument(
+    documentId: string,
+    workspaceId: number,
+    content: string
+  ): Promise<void> {
+    await aiApi.post('/ai/index', {
+      documentId,
+      workspaceId,
+      content,
+    });
+  },
+
+  // ============================================
+  // 📝 DOCUMENT INSIGHTS (Gemini)
+  // ============================================
+
+  /**
+   * Generate document summary with key points and topics
+   */
+  async summarizeDocument(documentId: string): Promise<Summary> {
+    const response = await aiApi.get(`/ai/summarize/${documentId}`);
+    return response.data;
+  },
+
+  /**
+   * Get comprehensive document insights
+   */
+  async getDocumentInsights(documentId: string): Promise<Insights> {
+    const response = await aiApi.get(`/ai/insights/${documentId}`);
+    return response.data;
+  },
+
+  // ============================================
+  // ✍️ WRITING ASSISTANT (Gemini)
+  // ============================================
+
+  /**
+   * Improve selected text for clarity and grammar
+   */
+  async improveWriting(text: string): Promise<WritingImprovement> {
+    const response = await aiApi.post('/ai/improve', { text });
+    return {
+      original: text,
+      improved: response.data.improved,
+      changes: [], // Backend can optionally return this
+    };
+  },
+
+  /**
+   * AI-powered autocomplete
+   */
+  async autocomplete(context: string): Promise<{ suggestion: string }> {
+    const response = await aiApi.post('/ai/autocomplete', { context });
+    return response.data;
+  },
+
+  // ============================================
+  // 🔄 CONFLICT RESOLUTION (Gemini)
+  // ============================================
+
+  /**
+   * Detect inconsistencies between documents
+   */
+  async detectInconsistencies(
+    documentId: string,
+    compareWithDocumentIds: string[]
+  ): Promise<InconsistencyReport> {
+    const response = await aiApi.post('/ai/inconsistencies', {
+      documentId,
+      compareWithDocumentIds,
+    });
+    return response.data;
+  },
+
+  /**
+   * Merge conflicting document versions
+   */
+  async resolveConflict(
+    original: string,
+    versionA: string,
+    versionB: string
+  ): Promise<ConflictResolution> {
+    const response = await aiApi.post('/ai/resolve-conflict', {
+      original,
+      versionA,
+      versionB,
+    });
+    return response.data;
+  },
+
+  // ============================================
+  // 🎯 HELPER METHODS
+  // ============================================
+
+  /**
+   * Check if AI service is healthy
+   */
+  async healthCheck(): Promise<{ status: string; features: string[] }> {
+    const response = await aiApi.get('/health');
+    return response.data;
+  },
+
+  /**
+   * Get AI service stats
+   */
+  async getStats(): Promise<any> {
+    const response = await aiApi.get('/ai/stats');
+    return response.data;
+  },
+};
