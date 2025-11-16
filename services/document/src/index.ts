@@ -27,17 +27,49 @@ const httpServer = createServer(app);
 // ⚙️ 1. Core Middleware
 // ---------------------------
 
-app.use(express.json({ limit: '10mb' }));
+
+const allowedOrigins = [
+  'https://streamline-frontend-nine.vercel.app', // Production
+  'http://localhost:3000', // Local development
+  /^https:\/\/streamline-frontend-.*\.vercel\.app$/, // All Vercel preview deployments
+];
+
+// ✅ STEP 2: Dynamic CORS configuration
 app.use(cors({
-  origin: process.env.FRONTEND_URL,
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, Postman, server-to-server)
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    // Check if origin is in allowed list or matches regex pattern
+    const isAllowed = allowedOrigins.some(allowed => {
+      if (allowed instanceof RegExp) {
+        return allowed.test(origin);
+      }
+      return allowed === origin;
+    });
+
+    if (isAllowed) {
+      callback(null, true);
+    } else {
+      console.warn('❌ Blocked by CORS:', origin);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  exposedHeaders: ['Set-Cookie'],
+  maxAge: 86400, // 24 hours - cache preflight requests
 }));
+
+// ✅ STEP 3: Handle preflight explicitly
+app.options('*', cors());
 // ---------------------------
 // 🛡️ 2. Security Middleware
 // ---------------------------
-
+app.use(express.json({ limit: '10mb' }));
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
