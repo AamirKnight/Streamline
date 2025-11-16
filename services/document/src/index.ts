@@ -29,7 +29,7 @@ const httpServer = createServer(app);
 
 app.use(express.json({ limit: '10mb' }));
 app.use(cors({
-  origin: 'https://streamline-frontend-hdryvwclb-videos-projects-8b956c87.vercel.app/', // Your actual frontend URL
+  origin: process.env.FRONTEND_URL,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],

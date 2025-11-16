@@ -16,7 +16,7 @@ const app = express();
 
 app.use(helmet());
 app.use(cors({
-  origin: 'https://streamline-frontend-hdryvwclb-videos-projects-8b956c87.vercel.app/', // Your actual frontend URL
+  origin: process.env.FRONTEND_URL,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
