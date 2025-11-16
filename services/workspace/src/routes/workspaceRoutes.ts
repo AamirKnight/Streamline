@@ -11,25 +11,21 @@ import {
 } from '../controllers/workspaceController';
 import { authenticate } from '../middleware/auth';
 import { isWorkspaceMember, isWorkspaceAdmin } from '../middleware/workspace';
+import { strictLimiter } from '../middleware/rateLimitter';
 
 const router = Router();
 
-// All routes require authentication
+// ✅ Apply authentication to ALL routes
 router.use(authenticate);
 
-
-
-import { strictLimiter } from '../middleware/rateLimitter';
-
-router.post('/', authenticate, strictLimiter, createWorkspace);
-router.put('/:workspaceId', authenticate, isWorkspaceAdmin, strictLimiter, updateWorkspace);
-router.delete('/:workspaceId', authenticate, isWorkspaceAdmin, strictLimiter, deleteWorkspace);
-// Workspace CRUD
-
+// ✅ Workspace CRUD (order matters - specific before general)
+router.post('/', strictLimiter, createWorkspace); // ⚠️ No extra middleware on POST
 router.get('/', getWorkspaces);
 router.get('/:workspaceId', isWorkspaceMember, getWorkspaceById);
+router.put('/:workspaceId', isWorkspaceAdmin, strictLimiter, updateWorkspace);
+router.delete('/:workspaceId', isWorkspaceAdmin, strictLimiter, deleteWorkspace);
 
-// Member management
+// ✅ Member management
 router.get('/:workspaceId/members', isWorkspaceMember, getWorkspaceMembers);
 router.post('/:workspaceId/invite', isWorkspaceAdmin, inviteMember);
 router.delete('/:workspaceId/members/:memberId', isWorkspaceAdmin, removeMember);

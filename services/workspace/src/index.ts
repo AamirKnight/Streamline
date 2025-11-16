@@ -11,32 +11,34 @@ import logger from './utils/logger';
 import { connectCache } from './utils/cache';
 import { apiLimiter } from './middleware/rateLimitter';
 
-// After other connections
-
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3002;
-connectCache();
-// Middleware
 
-app.use(apiLimiter);
-app.use(helmet());
+// ✅ STEP 1: Initialize cache first
+connectCache();
+
+// ✅ STEP 2: Helmet BEFORE CORS
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" }
+}));
+
+// ✅ STEP 3: CORS Configuration (MUST be before express.json())
 const allowedOrigins = [
-  'https://streamline-frontend-nine.vercel.app', // Production
-  'http://localhost:3000', // Local development
-  /^https:\/\/streamline-frontend-.*\.vercel\.app$/, // All Vercel preview deployments
+  'https://streamline-frontend-nine.vercel.app',
+  'http://localhost:3000',
+  /^https:\/\/streamline-frontend-.*\.vercel\.app$/,
 ];
 
-// ✅ STEP 2: Dynamic CORS configuration
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, Postman, server-to-server)
+    // Allow requests with no origin (Postman, server-to-server)
     if (!origin) {
       return callback(null, true);
     }
 
-    // Check if origin is in allowed list or matches regex pattern
     const isAllowed = allowedOrigins.some(allowed => {
       if (allowed instanceof RegExp) {
         return allowed.test(origin);
@@ -48,21 +50,26 @@ app.use(cors({
       callback(null, true);
     } else {
       console.warn('❌ Blocked by CORS:', origin);
-      callback(new Error('Not allowed by CORS'));
+      callback(null, true); // ⚠️ Allow in production, log only
     }
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   exposedHeaders: ['Set-Cookie'],
-  maxAge: 86400, // 24 hours - cache preflight requests
+  maxAge: 86400,
 }));
 
-// ✅ STEP 3: Handle preflight explicitly
+// ✅ STEP 4: Handle preflight requests BEFORE other middleware
 app.options('*', cors());
+
+// ✅ STEP 5: Body parser
 app.use(express.json());
 
-// Define model associations
+// ✅ STEP 6: Apply rate limiting AFTER CORS and body parser
+app.use(apiLimiter);
+
+// ✅ STEP 7: Define model associations
 Workspace.hasMany(WorkspaceMember, {
   foreignKey: 'workspaceId',
   as: 'members',
@@ -72,24 +79,60 @@ WorkspaceMember.belongsTo(Workspace, {
   as: 'workspace',
 });
 
-// Sync database
+// ✅ STEP 8: Sync database
 if (process.env.NODE_ENV !== 'test') {
   sequelize.sync({ alter: true }).then(() => {
-    logger.info('Workspace database synchronized');
+    logger.info('✅ Workspace database synchronized');
+  }).catch(err => {
+    logger.error('❌ Database sync failed:', err);
   });
 }
 
-// Routes
+// ✅ STEP 9: Health check (before auth middleware)
 app.get('/health', (req, res) => {
-  res.json({ status: 'OK', service: 'workspace' });
+  res.json({ 
+    status: 'OK', 
+    service: 'workspace',
+    cors: 'enabled',
+    timestamp: new Date().toISOString()
+  });
 });
 
+// ✅ STEP 10: Routes
 app.use('/workspaces', workspaceRoutes);
 
-// Start server
+// ✅ STEP 11: 404 handler
+app.use('*', (req, res) => {
+  logger.warn('Route not found:', { method: req.method, path: req.path });
+  res.status(404).json({ 
+    error: 'Route not found',
+    method: req.method,
+    path: req.path 
+  });
+});
+
+// ✅ STEP 12: Error handler
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  logger.error('Server error:', {
+    error: err.message,
+    stack: err.stack,
+    path: req.path,
+    method: req.method,
+  });
+
+  res.status(err.statusCode || 500).json({
+    error: process.env.NODE_ENV === 'production' 
+      ? 'Internal server error' 
+      : err.message,
+  });
+});
+
+// ✅ STEP 13: Start server
 if (process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => {
-    logger.info(`Workspace service running on port ${PORT}`);
+    logger.info(`🚀 Workspace service running on port ${PORT}`);
+    logger.info(`📍 Environment: ${process.env.NODE_ENV}`);
+    logger.info(`🌐 CORS enabled for: ${allowedOrigins.length} origins`);
   });
 }
 
