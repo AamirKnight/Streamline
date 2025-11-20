@@ -77,11 +77,15 @@ app.use('/auth', authRoutes);
 // Error handling
 app.use(errorHandler);
 
-const PORT = process.env.PORT || config.port;
+// Start server only if not in test mode
+// Start server only if not in test mode
+if (process.env.NODE_ENV !== 'test') {
+  const PORT = process.env.PORT || config.port;
 
-app.listen(PORT, () => {
-  logger.info(`Auth service running on port ${PORT}`);
-});
+  app.listen(PORT, () => {
+    logger.info(`Auth service running on port ${PORT}`);
+  });
+}
 
 
 export default app;
